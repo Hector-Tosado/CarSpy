@@ -1,6 +1,7 @@
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
 #include "inc/hw_ints.h"
+#include "inc/hw_gpio.h"
 #include "driverlib/sysctl.h"
 #include "driverlib/gpio.h"
 #include "driverlib/uart.h"
@@ -96,16 +97,92 @@ UART1IntHandler(void)
 	//tBoolean bRc;
 
 	// Get the interrupt status.
-	ulStatus = UARTIntStatus(UART1_BASE, true);
+	ulStatus = UARTIntStatus(UART3_BASE, true);
 
 	// Clear the asserted interrupts.
-	UARTIntClear(UART1_BASE, ulStatus);
+	UARTIntClear(UART3_BASE, ulStatus);
 
 	// Mientras haya data en el UART1
-	UARTReceive(UART1_BASE, response);
+	UARTReceive(UART3_BASE, response);
 
 }
 
+/*
+ * Setup FTP Connection
+ * Configuration, Activates Context, Opens server connection, File transfer type,
+ */
+void
+FTPConnect(void)
+{
+	/*INITIAL CONFIGURATION
+	 *Creates context 1.
+	 *APN: internet.claropr
+	 *IP address: dynamically assigned by the ISP
+	 *Packet Data Protocol type: Internet Protocol (IP)
+	 *Data compression: OFF (0)
+	 *Header compression: OFF (0)
+	 */
+	 
+	// i=seg;
+	// while(i--){}
+	// UARTSend((unsigned long)UART1_BASE, (unsigned char *) "AT+CGDCONT=1,IP,internet.claropr,0.0.0.0,0,0 <cr>",44);//52 with carspy.ece...
+	// UARTCharPut(UART1_BASE, 13);
+	// UARTCharPut(UART1_BASE, 26);
+	
+	//INITIAL CONFIGURATION
+	//The TCP/IP stack behavior must be configured by setting:
+	//The packet default size: 512
+	//The socket inactivity timeout: 90
+	//The connection timeout: 300
+	//The data sending timeout: 100
+
+	//	i=seg;
+	//	while(i--){}
+	//	UARTSend((unsigned long)UART1_BASE, (unsigned char *) "AT#SCFG=1,1,512,90,300,100", 26);
+	//	UARTCharPut(UART1_BASE, 13);
+	//	UARTCharPut(UART1_BASE, 26);
+	//
+
+	/*
+	 * Activate context defined in AT+CGDCONT. Returns IP assigned by network.
+	 */
+	//	i=seg;
+	//	while(i--){}
+	//	UARTSend((unsigned long)UART3_BASE, (unsigned char *) "AT#SGACT=1,1", 12);
+	//	UARTCharPut(UART3_BASE, 13);
+	//	UARTCharPut(UART3_BASE, 26);
+
+	/*
+	 * Open FTP Connection
+	 * server:port - Port defaults 21.
+	 * Username and Password - Needed for server authentication.
+	 * 0 - Active mode.
+	 */
+	//	i=seg;
+	//	while(i--){}
+	//	UARTSend((unsigned long)UART3_BASE, (unsigned char *) "AT#FTPOPEN=carspy.ece.uprm.edu,capstone,thai4Ais,0", 50);
+	//	UARTCharPut(UART3_BASE, 13);
+	//	UARTCharPut(UART3_BASE, 26);
+
+	/*
+	 * Set the file transfer type. 0-binary, 1-ASCII
+	 */
+	//	i=seg;
+	//	while(i--){}
+	//	UARTSend((unsigned long)UART3_BASE, (unsigned char *) "AT#FTPTYPE=1", 12);
+	//	UARTCharPut(UART3_BASE, 13);
+	//	UARTCharPut(UART3_BASE, 26);
+
+	/*
+	 * FTP file transfer to the server.
+	 * Depends on a successful data connection.
+	 */
+	//	i=seg;
+	//	while(i--){}
+	//	UARTSend((unsigned long)UART3_BASE, (unsigned char *) "AT#FTPPUT=file.txt", 19);
+	//	UARTCharPut(UART3_BASE, 13);
+	//	UARTCharPut(UART3_BASE, 26);
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////
 
@@ -117,71 +194,69 @@ int main(void)
 	SysCtlClockSet(SYSCTL_SYSDIV_4 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
 
 	//Configuracion de los puertos UART que se van a usar en el micro
-	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART1);
-	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
+	//	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART1);
+	//	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
 
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART0);
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
 
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART3);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOC);
+
 	// Enable processor interrupts
 	IntMasterEnable();
 
+	//Pin_map
 	// Configure the GPIO pin muxing for the UART function.
 	GPIOPinConfigure(0x00000001);//GPIO_PA0_U0RX
 	GPIOPinConfigure(0x00000401);//GPIO_PA1_U0TX
-	GPIOPinConfigure(0x00010001);//GPIO_PB0_U0RX
-	GPIOPinConfigure(0x00010401);//GPIO_PB1_U0TX
+	//	GPIOPinConfigure(0x00010001);//GPIO_PB0_U0RX
+	//	GPIOPinConfigure(0x00010401);//GPIO_PB1_U0TX
+	GPIOPinConfigure(0x00021801);//GPIO_PC6_U3RX
+	GPIOPinConfigure(0x00021C01);//GPIO_PC7_U3TX
 
 	// Since GPIO A0 and A1 are used for the UART function, they must be
 	// configured for use as a peripheral function (instead of GPIO).
 	GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
-	GPIOPinTypeUART(GPIO_PORTB_BASE, GPIO_PIN_0 | GPIO_PIN_1);
+	//	GPIOPinTypeUART(GPIO_PORTB_BASE, GPIO_PIN_0 | GPIO_PIN_1);
+	GPIOPinTypeUART(GPIO_PORTC_BASE, GPIO_PIN_6 | GPIO_PIN_7);
 
 	// Configure the UART for 115,200, 8-N-1 operation.
 	UARTConfigSetExpClk(UART0_BASE, SysCtlClockGet(), 115200,
 			(UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
 					UART_CONFIG_PAR_NONE));
-	UARTConfigSetExpClk(UART1_BASE, SysCtlClockGet(), 115200,
+	//	UARTConfigSetExpClk(UART1_BASE, SysCtlClockGet(), 115200,
+	//			(UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
+	//					UART_CONFIG_PAR_NONE));
+	UARTConfigSetExpClk(UART3_BASE, SysCtlClockGet(), 115200,
 			(UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
 					UART_CONFIG_PAR_NONE));
 
 
-	IntEnable(INT_UART1);
-	UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT);
+	//	IntEnable(INT_UART1);
+	//	UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT);
 
+	IntEnable(INT_UART3);
+	UARTIntEnable(UART3_BASE, UART_INT_RX | UART_INT_RT);
 	// Put a character to show start of example. This will display on the terminal.
 	UARTCharPut(UART0_BASE, '!');
 	//strlen((const char*)command)
 	// Send to UART0 using UARTSend. Testing purposes.
-	//	i=seg;
-//	while(i--){}
-//	UARTSend((unsigned long)UART1_BASE, (unsigned char *) "AT", 2);
-//	UARTCharPut(UART1_BASE, 13);
-//	UARTCharPut(UART1_BASE, 26);
+	i=seg;
+	while(i--){}
+	UARTSend((unsigned long)UART3_BASE, (unsigned char *) "AT", 2);
+	UARTCharPut(UART3_BASE, 13);
+	UARTCharPut(UART3_BASE, 26);
 
+	FTPConnect();
 	/*
 	 * Prints out possible baud rates.
 	 */
 	//	i=seg;
 	//	while(i--){}
-	//	UARTSend((unsigned long)UART1_BASE, (unsigned char *) "AT+IPR=?",8);
-	//	UARTCharPut(UART1_BASE, 13);
-	//	UARTCharPut(UART1_BASE, 26);
-
-	/*
-	 *Creates context 1.
-	 *APN: carspy.ece.uprm.edu
-	 *IP address: dynamically assigned by the ISP
-	 *Packet Data Protocol type: Internet Protocol (IP)
-	 *Data compression: OFF
-	 *Header compression: OFF
-	 *
-	 */
-		i=seg;
-		while(i--){}
-		UARTSend((unsigned long)UART1_BASE, (unsigned char *) "AT+CGDCONT=1,IP,ibox.tim.it,0.0.0.0,0,0 <cr>",44);//52 with carspy.ece...
-		UARTCharPut(UART1_BASE, 13);
-		UARTCharPut(UART1_BASE, 26);
+	//	UARTSend((unsigned long)UART3_BASE, (unsigned char *) "AT+IPR=?",8);
+	//	UARTCharPut(UART3_BASE, 13);
+	//	UARTCharPut(UART3_BASE, 26);
 
 	/*
 	 * The minimum quality of service requested parameters represent the
@@ -224,29 +299,13 @@ int main(void)
 	/*
 	 * HAS to be sent after a connection has been established. It requires +++ to exit Data Traffic Mode (Socket Mode)
 	 */
-	//	i=seg;
-	//	while(i--){}
-	//	UARTSend((unsigned long)UART1_BASE, (unsigned char *) "+++",3);
-	//	SysCtlDelay(100000000); //Needs 2 second delay between the command and the LF and CR characters for correct reading of pause command.
-	//	UARTCharPut(UART1_BASE, 13);
-	//	UARTCharPut(UART1_BASE, 26);
+	//		i=seg;
+	//		while(i--){}
+	//		UARTSend((unsigned long)UART1_BASE, (unsigned char *) "+++",3);
+	//		SysCtlDelay(100000000); //Needs 2 second delay between the command and the LF and CR characters for correct reading of pause command.
+	//		UARTCharPut(UART1_BASE, 13);
+	//		UARTCharPut(UART1_BASE, 26);
 
-	i=seg;
-	while(i--){}
-	UARTSend((unsigned long)UART1_BASE, (unsigned char *) "AT#SCFG=1,1,512,30,300,100", 26);
-	UARTCharPut(UART1_BASE, 13);
-	UARTCharPut(UART1_BASE, 26);
-
-	i=seg;
-	while(i--){}
-	UARTSend((unsigned long)UART1_BASE, (unsigned char *) "AT#SD=1,0,80,www.telit.com", 26);
-	UARTCharPut(UART1_BASE, 13);
-	UARTCharPut(UART1_BASE, 26);
-	// DELAY??
-
-	//	 Send to UART1 using UARTSend
-	//	UARTSend((unsigned long)UART1_BASE, (unsigned char*)"AT+CREG", 7);
-	//	UARTCharPut(UART1_BASE, 13);
 
 	while(1){}
 
