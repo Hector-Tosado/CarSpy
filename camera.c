@@ -310,10 +310,18 @@ int main(void)
 	UARTSend((unsigned long)UART1_BASE, bytes, sizeof(bytes));
 	/////////////////////////////////////////////////////////////////////////////
 
-	//	FlashErase(0x10000);
-	//	unsigned long length = sizeof(photo);
-	//	FlashProgram((unsigned long*)photo, 0x10000, length);
-	//	SysCtlDelay(20000000);
+//	SysCtlDelay(150000000);
+//
+//	//addr
+//
+//
+//	FlashErase(0x10000);
+//	// unsigned long length = sizeof(photo);
+//	unsigned long length = count;
+//	FlashProgram((unsigned long*)photo, 0x10000, length);
+//
+//
+//	SysCtlDelay(20000000);
 
 	while(1){}
 
