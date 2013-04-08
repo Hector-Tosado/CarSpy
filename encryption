@@ -1,0 +1,368 @@
+#include "inc/hw_memmap.h"
+#include "inc/hw_types.h"
+#include "inc/hw_ints.h"
+#include "driverlib/sysctl.h"
+#include "driverlib/gpio.h"
+#include "driverlib/uart.h"
+#include "driverlib/pin_map.h"
+#include "driverlib/rom_map.h"
+#include "driverlib/interrupt.h"
+#include "utils/uartstdio.h"
+#include "string.h"
+#include "stdio.h"
+#include "stdlib.h"
+#include "driverlib/flash.h"
+
+volatile char response[100];
+volatile char photo[13000];
+volatile int a;
+char cChar;
+char temp;
+int EndFlag = 0;
+int StartFlag = 0;
+int READ = 0;
+int i = 0;
+int j = 0;
+int k = 0;
+volatile int count = 0;
+
+
+//*****************************************************************************
+//
+// Send command to the UART.
+//
+//*****************************************************************************
+void
+UARTSend(unsigned long ulBase, const unsigned char *pucBuffer, unsigned long ulCount)
+{
+  //
+	// Loop while there are more characters to send.
+	//
+	while(ulCount--)
+	{
+		//
+		// Write the next character to the UART.
+		//
+		UARTCharPut(ulBase, *pucBuffer++);
+	}
+}
+
+
+
+//*****************************************************************************
+//
+// Receive response from the UART.
+//
+//*****************************************************************************
+void
+UARTReceive(unsigned long ulBase, volatile char pucBuffer[])
+{
+	//
+	// Loop while there are more characters to send.
+	//
+	if(READ==1){ // Photo raw data
+		while(UARTCharsAvail(ulBase) && !EndFlag)
+		{
+			// Read the next character from the UART
+			cChar = UARTCharGet(ulBase);
+
+			if(i >=5)
+			{
+				pucBuffer[count++] = cChar;
+
+				// new code
+				if((temp == 255) && (cChar == 217)){
+					EndFlag = 1;
+				}
+
+				temp = cChar;
+			}
+			i++;
+			//Print device response to terminal
+			//UARTCharPut(UART0_BASE, cChar);
+		}
+	}
+
+	else
+		while(UARTCharsAvail(ulBase))
+		{
+			// Read the next character from the UART
+			cChar = UARTCharGet(ulBase);
+			pucBuffer[a++] = cChar;
+
+			//Print device response to terminal
+			UARTCharPut(UART0_BASE, cChar);
+		}
+}
+
+
+
+
+
+
+
+//*****************************************************************************
+//
+// The UART interrupt handler.
+//
+//****************************************************************************
+void
+UART1IntHandler(void)
+{
+	unsigned long ulStatus;
+
+	// Get the interrupt status.
+	ulStatus = UARTIntStatus(UART1_BASE, true);
+
+	// Clear the asserted interrupts.
+	UARTIntClear(UART1_BASE, ulStatus);
+
+	// Mientras haya data en el UART1
+	if(READ == 1)
+		UARTReceive(UART1_BASE, photo);
+	else
+		UARTReceive(UART1_BASE, response);
+
+}
+
+//--------------------------------------------------------------------------
+
+//unsigned char gmul(unsigned char a, unsigned char b) {
+//	unsigned char p = 0;
+//	unsigned char counter;
+//	unsigned char hi_bit_set;
+//	for(counter = 0; counter < 8; counter++) {
+//		if((b & 1) == 1)
+//			p ^= a;
+//		hi_bit_set = (a & 0x80);
+//		a <<= 1;
+//		if(hi_bit_set == 0x80)
+//			a ^= 0x1b;
+//		b >>= 1;
+//	}
+//	return p;
+//}
+//
+//
+//unsigned char gmul(unsigned char a, unsigned char b) {
+//	int s;
+//	int q;
+//	int z = 0;
+//	s = ltable[a] + ltable[b];
+//	s %= 255;
+//	/* Get the antilog */
+//	s = atable[s];
+//	/* Now, we have some fancy code that returns 0 if either
+//           a or b are zero; we write the code this way so that the
+//           code will (hopefully) run at a constant speed in order to
+//           minimize the risk of timing attacks */
+//	q = s;
+//	if(a == 0) {
+//		s = z;
+//	}
+//	else {
+//		s = q;
+//	}
+//	if(b == 0) {
+//		s = z;
+//	}
+//	else {
+//		q = z;
+//	}
+//	return s;
+//}
+//
+//void generate_tables() {
+//        unsigned char c;
+//        unsigned char a = 1;
+//        unsigned char d;
+//        for(c=0;c<255;c++) {
+//                atable[c] = a;
+//                /* Multiply by three */
+//                d = a & 0x80;
+//                a <<= 1;
+//                if(d == 0x80) {
+//                        a ^= 0x1b;
+//                }
+//                a ^= atable[c];
+//		/* Set the log table value */
+//                ltable[atable[c]] = c;
+//        }
+//        atable[255] = atable[0];
+//        ltable[0] = 0;
+//}
+//
+//
+//
+//unsigned char gmul_inverse(unsigned char in) {
+//	/* 0 is self inverting */
+//	if(in == 0)
+//		return 0;
+//	else
+//        	return atable[(255 - ltable[in])];
+//}
+//
+///* Calculate the s-box for a given number */
+//// from: http://www.samiam.org/s-box.html
+//unsigned char sbox(unsigned char in) {
+//        unsigned char c, s, x;
+//        s = x = gmul_inverse(in);
+//        for(c = 0; c < 4; c++) {
+//                /* One bit circular rotate to the left */
+//                s = (s << 1) | (s >> 7);
+//                /* xor with x */
+//                x ^= s;
+//        }
+//        x ^= 99; /* 0x63 */
+//        return x;
+//}
+
+
+
+
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////////
+
+int main(void)
+{
+	unsigned char bytes[16]; // cambiar nombre de bytes por command
+	unsigned char a = 0;
+	unsigned int MH;
+	unsigned int ML;
+
+	// Setear clock
+	SysCtlClockSet(SYSCTL_SYSDIV_4 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
+
+	//Configuracion de los puertos UART que se van a usar en el micro
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART1);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
+
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART0);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
+
+	// Enable processor interrupts
+	IntMasterEnable();
+
+	// Configure the GPIO pin muxing for the UART function.
+	GPIOPinConfigure(0x00000001);//GPIO_PA0_U0RX
+	GPIOPinConfigure(0x00000401);//GPIO_PA1_U0TX
+	GPIOPinConfigure(0x00010001);//GPIO_PB0_U0RX
+	GPIOPinConfigure(0x00010401);//GPIO_PB1_U0TX
+
+	// Since GPIO A0 and A1 are used for the UART function, they must be
+	// configured for use as a peripheral function (instead of GPIO).
+	GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
+	GPIOPinTypeUART(GPIO_PORTB_BASE, GPIO_PIN_0 | GPIO_PIN_1);
+
+	// Configure the UART for 115,200, 8-N-1 operation.
+	UARTConfigSetExpClk(UART0_BASE, SysCtlClockGet(), 38400,
+			(UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
+					UART_CONFIG_PAR_NONE));
+	UARTConfigSetExpClk(UART1_BASE, SysCtlClockGet(), 38400,
+			(UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
+					UART_CONFIG_PAR_NONE));
+
+	// Enable interrupt
+	IntEnable(INT_UART1);
+	UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT);
+
+	// Put a character to show start of example. This will display on the terminal.
+	UARTCharPut(UART0_BASE, '!');
+
+
+	//**************** Encryption Implementation *******************//
+	char inBuffer[16]; // temp, 128-bit blocks
+	char outBuffer[16]; // temp, 128-bit blocks
+	char b[16]; // temp, 128-bit blocks
+	char tempBuffer[16];
+	unsigned char key[16] ; // 128-bit key
+	unsigned char initializationVector[16]; // 128-bit key
+	int i = 0;
+	int j = 0;
+	int k = 0;
+
+	// Generate Key & IV random de 0 - 255
+	for(i = 0; i < 16; i++)
+	{
+		key[i] = rand() % 255;
+		initializationVector[i] = rand() % 255;
+	}
+
+	//UARTSend((unsigned long)UART0_BASE, (const unsigned char*)key, sizeof(key));
+
+
+	// Checking if data is divisible by 128 bits (16 bytes)
+	if(count % 16 != 0)
+		count = 16 - (count % 16); // zero padding
+
+
+
+	// SubBytes
+		// Calculate Multiplicative Inverse (Rinjidael S-Box) for block
+		// Replace each byte by the corresponding element in the SBox
+
+	// ShiftRow
+	tempBuffer[0] = inBuffer[0];
+	tempBuffer[1] = inBuffer[5];
+	tempBuffer[2] = inBuffer[10];
+	tempBuffer[3] = inBuffer[15];
+	tempBuffer[4] = inBuffer[4];
+	tempBuffer[5] = inBuffer[9];
+	tempBuffer[6] = inBuffer[14];
+	tempBuffer[7] = inBuffer[3];
+	tempBuffer[8] = inBuffer[8];
+	tempBuffer[9] = inBuffer[13];
+	tempBuffer[10] = inBuffer[2];
+	tempBuffer[11] = inBuffer[7];
+	tempBuffer[12] = inBuffer[12];
+	tempBuffer[13] = inBuffer[1];
+	tempBuffer[14] = inBuffer[6];
+	tempBuffer[15] = inBuffer[11];
+
+	for(j = 0; j < 16; j++)
+	{
+		inputBuffer[j] = tempBuffer[j];
+	}
+
+
+	// Each function was computed using the Rijndael Mix Columns where
+	// 1 means no change, 2 shift left, 3 shift left and xor with original
+	// Matrix used: [2 3 1 1; 1 2 3 1; 1 1 2 3; 3 1 1 2]
+
+	// MixColumn
+	tempBuffer[0] = (inBuffer[0] << 1) || inBuffer[4] || inBuffer[8] || ((inBuffer[12] << 1) ^ inBuffer[12]);
+	tempBuffer[1] = ;
+	tempBuffer[2] = ;
+	tempBuffer[3] = ;
+	tempBuffer[4] = ;
+	tempBuffer[5] = ;
+	tempBuffer[6] = ;
+	tempBuffer[7] = ;
+	tempBuffer[8] = ;
+	tempBuffer[9] = ;
+	tempBuffer[10] = ;
+	tempBuffer[11] = ;
+	tempBuffer[12] = ;
+	tempBuffer[13] = ;
+	tempBuffer[14] = ;
+	tempBuffer[15] = ;
+
+
+	// AddRoundKey - bitwise xor state and key
+	for(k = 0; k < 16; k++)
+	{
+		b[k] = inBuffer[k]^key[k];
+	}
+
+	UARTSend((unsigned long)UART0_BASE, (const unsigned char*)x, sizeof(x));
+
+	while(1){}
+
+	return 0;
+}
+
+
+
+
