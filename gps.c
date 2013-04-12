@@ -35,7 +35,7 @@ char cCharS;
 void
 UARTSend(unsigned long ulBase, const unsigned char *pucBuffer, unsigned long ulCount)
 {
-  //
+	//
 	// Loop while there are more characters to send.
 	//
 	while(ulCount--)
@@ -138,6 +138,22 @@ UARTReceive(unsigned long ulBase, volatile char pucBuffer[])
 		{
 			foundflag=0;
 			coordinatesSize=coordinatesCount;
+			if (coordinatesSize <50)
+			{
+				UARTCharPut(UART0_BASE, 26);
+				UARTCharPut(UART0_BASE, 'N');
+				UARTCharPut(UART0_BASE, 'O');
+				UARTCharPut(UART0_BASE, 26);
+			}
+			else
+			{
+				UARTCharPut(UART0_BASE, 26);
+				UARTCharPut(UART0_BASE, 'Y');
+				UARTCharPut(UART0_BASE, 'E');
+				UARTCharPut(UART0_BASE, 'S');
+				UARTCharPut(UART0_BASE, 26);
+
+			}
 			coordinatesCount=0;
 
 		//If coordinate is valid then the interrupt will be disable.
@@ -162,6 +178,21 @@ UARTReceive2(unsigned long ulBase, volatile char pucBuffer[])
 		UARTCharPut(UART1_BASE, cChar);
 		UARTCharPut(UART1_BASE, 13);
 		UARTCharPut(UART1_BASE, 26);
+	}
+}
+
+UARTReceive3(unsigned long ulBase, volatile char pucBuffer[])
+{
+	//
+	// Loop while there are more characters to send.
+	//
+	while(UARTCharsAvail(ulBase))
+	{
+		// Read the next character from the UART
+		cChar = UARTCharGet(ulBase);
+		pucBuffer[a++] = cChar;
+		UARTCharPut(UART0_BASE, cChar);
+
 	}
 }
 
@@ -226,7 +257,7 @@ int main(void)
 	proof1[2]='P';
 	proof1[3]='R';
 
-	volatile long int seg=1000000;//3000000 funciona con 38400 baudrate.
+	volatile long int seg=1000000;//
 	// Setear clock
 	SysCtlClockSet(SYSCTL_SYSDIV_4 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
 
@@ -269,12 +300,9 @@ int main(void)
 	{}
 	//--------------Set RMC only output sentences
 	UARTSend((unsigned long)UART1_BASE, (unsigned char *)"$PMTK314,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*29\r\n",53);
-	i=seg/2;
-		while(i--)
-		{}
-	IntEnable(INT_UART1);
-	UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT);
 
+	IntEnable(INT_UART1);
+			UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT);
 	//UARTReceive(UART1_BASE, response);
 
 
@@ -283,6 +311,11 @@ int main(void)
 
 	//--------------Test and activate low power mode
 	//UARTSend((unsigned long)UART1_BASE, (unsigned char *)"$PMTK000*32\r\n",15);
+
+	i=seg/2;
+			while(i--)
+			{}
+
 
 	//--------------Get Threshold Speed
 	//UARTSend((unsigned long)UART1_BASE, (unsigned char *)"$PMTK447*35\r\n",15);
