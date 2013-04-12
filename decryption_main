@@ -1,0 +1,82 @@
+
+public class Decryption {
+
+  /**
+	 * @author Yolián Amaro Rivera
+	 */
+
+	// Encrypted data block
+	public static final String[][] ciphertext = {
+		{ "39", "02", "DC", "19" },
+		{ "25", "DC", "11", "6A" },
+		{ "84", "09", "85", "0B" },
+		{ "1D", "FB", "97", "32" } };
+
+	// Cipher key
+	public static final String[][] key = {
+		{ "2B", "28", "AB", "09" },
+		{ "7E", "AE", "F7", "CF" },
+		{ "15", "D2", "15", "4F" },
+		{ "16", "A6", "88", "3C" } };
+
+	public static void main(String[] args) {
+		
+		// Call decrypt function
+		String[] temp = decrypt(ciphertext, key);
+		
+		// Print decrypt array
+		print2DArray(Functions.toArray(temp[temp.length - 1]));
+
+	}
+	
+	
+	/**
+	 * Decrypts given ciphertext.
+	 * @param state - ciphertext to decrypt
+	 * @param key - key to use during decryption
+	 * @return original plaintext
+	 */
+	public static String[] decrypt(String[][] state, String[][] key) {
+		String[] key_set = Functions.expandKey(key);
+		String[] result = new String[11];
+		String[][] temp;
+
+		// Decryption function calls
+		
+		temp = Functions.addRoundKey(state, Functions.toArray(key_set[40] + key_set[41] + key_set[42] + key_set[43]));
+
+		int k = 40;
+		result[0] = Functions.toString(temp);
+
+		for (int i = 1; i < 10; i++) {
+			temp = Functions.invShiftRows(temp);
+			temp = Functions.invSubBytes(temp);
+			temp = Functions.addRoundKey(temp, Functions.toArray(key_set[k - 4] + key_set[k - 3] + key_set[k - 2] + key_set[k - 1]));
+			temp = Functions.invMixColumns(temp);
+			result[i] = Functions.toString(temp);
+			k -= 4;
+		}
+
+		temp = Functions.invShiftRows(temp);
+		temp = Functions.invSubBytes(temp);
+		temp = Functions.addRoundKey(temp, Functions.toArray(key_set[0] + key_set[1] + key_set[2] + key_set[3]));
+		result[10] = Functions.toString(temp);
+
+		return result;
+	}
+	
+	/**
+	 * Print original plaintext in 2D
+	 * @param A
+	 */
+	public static void print2DArray(String[][] A) {
+		for (int i = 0; i < A.length; i++) {
+			String s = "";
+			for (int j = 0; j < A.length; j++)
+				s += A[i][j]+"  ";
+			System.out.println(s);
+		}
+
+	}
+
+}
