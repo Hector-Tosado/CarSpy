@@ -7,7 +7,7 @@
 #include "driverlib/timer.h"
 int main(void)
 {
-  //unsigned long ulPeriod;
+	//unsigned long ulPeriod;
 	SysCtlClockSet(SYSCTL_SYSDIV_5|SYSCTL_USE_PLL|SYSCTL_XTAL_16MHZ|SYSCTL_OSC_MAIN);
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
@@ -31,16 +31,16 @@ int main(void)
 	//IntEnable(INT_TIMER0A);
 	//TimerIntEnable(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
 	IntMasterEnable();
-	SysCtlSleep();
+	//SysCtlSleep();
 	//TimerEnable(TIMER0_BASE, TIMER_A);
 	while(1)
 	{
-
-			SysCtlDelay(64000000);
-			//Aqui estara todo el codigo de carspy
-			//luego de que el codigo termina habra
-			//estas lineas para activar el interrupt y poner a dormir el micro
-			//IntEnable(INT_GPIOA);
+			//delay of 3 seconds
+			SysCtlDelay(25000000);
+			//After this delay the next lines are to activate the interrupt and
+			//send the microcontroller to sleep.
+			GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
+			IntEnable(INT_GPIOA);
 			//SysCtlSleep();
 	}
 }
@@ -52,14 +52,9 @@ void gpioAHandler(void)
 	//TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
 	// Read the current state of the GPIO pin and
 	// write back the opposite state
-	if(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_2))
-	{
-		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
-	}
-	else
-	{
-		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 4);
-	}
+
+	GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 4);
+
 
 
 
