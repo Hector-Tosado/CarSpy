@@ -1,0 +1,53 @@
+
+public class Decryption {
+
+  /**
+	 * @param args
+	 */
+	
+	public static final String[][] ciphertext = {
+		{ "39", "02", "DC", "19" },
+		{ "25", "DC", "11", "6A" },
+		{ "84", "09", "85", "0B" },
+		{ "1D", "FB", "97", "32" } };
+	
+	public static final String[][] key = {
+		{ "2B", "28", "AB", "09" },
+		{ "7E", "AE", "F7", "CF" },
+		{ "15", "D2", "15", "4F" },
+		{ "16", "A6", "88", "3C" } };
+	
+	public static void main(String[] args) {
+		// TODO Auto-generated method stub
+	
+		Functions f = new Functions();
+		
+		f.setState(Decryption.ciphertext);
+		f.fillExpandedKey(key);
+		f.FillRconTable();
+		
+		for(int y = 0; y < 40; y++){
+			f.expandKey();
+		}
+		
+		
+		for(int t = 0; t < 9; t++){
+			f.SubBytes();
+			f.ShiftRows();
+			f.MixColumns();
+			f.AddRoundKey();
+		}
+		
+		f.SubBytes();
+		f.ShiftRows();
+		f.AddRoundKey();
+
+		
+		// OK Functions.ArrToString(ciphertext, "ciphertext");
+		// OK  System.out.println(Functions.getInvSBoxValue("0A"));
+		// OK f.FillRconTable();
+		// OK Functions.ShiftRows();
+		
+	}
+
+}
