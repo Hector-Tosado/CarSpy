@@ -13,43 +13,26 @@
 #include "stdlib.h"
 #include "driverlib/flash.h"
 
-// Variables for camera
-volatile char response[100];
-volatile char photo[13000];
-volatile int a;
-char cChar;
-char temp;
-int EndFlag = 0;
-int StartFlag = 0;
-int READ = 0;
-int i = 0;
-//int j = 0;
-//int k = 0;
-volatile int count = 0;
 
 // Variables for Encryption
 unsigned char state[4][4]; // temp, 128-bit blocks
-//unsigned char outBuffer[16]; // temp, 128-bit blocks
-//unsigned char b[16]; // temp, 128-bit blocks
 unsigned char tempBuffer[4][4];
 unsigned char cipherKey[4][4] ; // 128-bit key
 unsigned char initVector[4][4]; // 128-bit key
 unsigned char expandedKey[4][44];
-int l = 0;
-int j = 0;
-int k = 0;
-int m = 0;
-int n = 0;
-int x = 0;
-int p = 0;
-int q = 0;
-//volatile int index = 0; // to be used to mark blocks in photo buffer
-//volatile int start_index = 0;
-//volatile int end_index = 16;
-volatile int photo1[128];
+int i, l, j, k, m, n, x, p, q = 0;
+//int i = 0;
+//int l = 0;
+//int j = 0;
+//int k = 0;
+//int m = 0;
+//int n = 0;
+//int x = 0;
+//int p = 0;
+//int q = 0;
 
-//Tables
-static unsigned char sbox[256] =
+//Rijndael S-Box Table
+unsigned char sbox[256] =
 {
 		0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
 		0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0, 0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0,
@@ -74,6 +57,8 @@ static unsigned char sbox[256] =
 volatile unsigned char Rcon[4][10];
 volatile unsigned char column[4][1];
 int index = 4;
+unsigned char roundKey[4][4];
+volatile int roundNumber = 0;
 
 
 //*****************************************************************************
@@ -81,94 +66,22 @@ int index = 4;
 // Send command to the UART.
 //
 //*****************************************************************************
-void
-UARTSend(unsigned long ulBase, const unsigned char *pucBuffer, unsigned long ulCount)
-{
-	//
-	// Loop while there are more characters to send.
-	//
-	while(ulCount--)
-	{
-		//
-		// Write the next character to the UART.
-		//
-		UARTCharPut(ulBase, *pucBuffer++);
-	}
-}
+//void
+//UARTSend(unsigned long ulBase, const unsigned char *pucBuffer, unsigned long ulCount)
+//{
+//	//
+//	// Loop while there are more characters to send.
+//	//
+//	while(ulCount--)
+//	{
+//		//
+//		// Write the next character to the UART.
+//		//
+//		UARTCharPut(ulBase, *pucBuffer++);
+//	}
+//}
 
 
-
-//*****************************************************************************
-//
-// Receive response from the UART.
-//
-//*****************************************************************************
-void
-UARTReceive(unsigned long ulBase, volatile char pucBuffer[])
-{
-	//
-	// Loop while there are more characters to send.
-	//
-	if(READ==1){ // Photo raw data
-		while(UARTCharsAvail(ulBase) && !EndFlag)
-		{
-			// Read the next character from the UART
-			cChar = UARTCharGet(ulBase);
-
-			if(i >=5)
-			{
-				pucBuffer[count++] = cChar;
-
-				// new code
-				if((temp == 255) && (cChar == 217)){
-					EndFlag = 1;
-				}
-
-				temp = cChar;
-			}
-			i++;
-			//Print device response to terminal
-			//UARTCharPut(UART0_BASE, cChar);
-		}
-	}
-
-	else
-		while(UARTCharsAvail(ulBase))
-		{
-			// Read the next character from the UART
-			cChar = UARTCharGet(ulBase);
-			pucBuffer[a++] = cChar;
-
-			//Print device response to terminal
-			UARTCharPut(UART0_BASE, cChar);
-		}
-}
-
-
-
-//*****************************************************************************
-//
-// The UART interrupt handler.
-//
-//****************************************************************************
-void
-UART1IntHandler(void)
-{
-	unsigned long ulStatus;
-
-	// Get the interrupt status.
-	ulStatus = UARTIntStatus(UART1_BASE, true);
-
-	// Clear the asserted interrupts.
-	UARTIntClear(UART1_BASE, ulStatus);
-
-	// Mientras haya data en el UART1
-	if(READ == 1)
-		UARTReceive(UART1_BASE, photo);
-	else
-		UARTReceive(UART1_BASE, response);
-
-}
 
 
 //*****************************************************************************
@@ -176,21 +89,82 @@ UART1IntHandler(void)
 // Key & IV Generator
 //
 //****************************************************************************
-void
-KeyIVGenerator()
-{
-	////// Generate Random Key & Initialization Vector
-	// Generate Key & IV random de 0 - 255
-	for(m = 0; m < 4; m++){
-		for(n = 0; n < 4; n++)
-		{
-			// for testing purposes, the key & IV will be the same
-			cipherKey[n][m] = rand() % 255; // check pq salen los mismos valores siempre
-			initVector[n][m] = cipherKey[n][m]; // IV same as key for testing purposes
-		}
-	}
+//void
+//KeyIVGenerator()
+//{
+//	////// Generate Random Key & Initialization Vector
+//	// Generate Key & IV random de 0 - 255
+//	for(m = 0; m < 4; m++){
+//		for(n = 0; n < 4; n++)
+//		{
+//			// for testing purposes, the key & IV will be the same
+//			cipherKey[n][m] = rand() % 255;
+//			initVector[n][m] = cipherKey[n][m]; // IV same as key for testing purposes
+//		}
+//	}
+//}
+
+
+
+//*****************************************************************************
+//
+// Zero Padding
+//
+//****************************************************************************
+//	///// Zero Padding
+//	// Checking if data is divisible by 128 bits (16 bytes)
+//	if(count % 16 != 0)
+//		count = 16 - (count % 16); // zero padding
+
+
+//*****************************************************************************
+//
+// Getting 128-bit (16 bytes) photo blocks for encryption
+//
+//****************************************************************************
+void getNextPhotoBlock(){
+	state[0][0] = 0x0A;
+	state[0][1] = 0x85;
+	state[0][2] = 0x30;
+	state[0][3] = 0x09;
+	state[1][0] = 0x0F;
+	state[1][1] = 0x5A;
+	state[1][2] = 0x31;
+	state[1][3] = 0x37;
+	state[2][0] = 0xF6;
+	state[2][1] = 0x30;
+	state[2][2] = 0x98;
+	state[2][3] = 0x07;
+	state[3][0] = 0xA8;
+	state[3][1] = 0x8D;
+	state[3][2] = 0xA2;
+	state[3][3] = 0x34;
 }
 
+//*****************************************************************************
+//
+// Key Generation
+//
+//****************************************************************************
+void generateKey(){
+	cipherKey[0][0] = 0x2B;
+	cipherKey[0][0] = 0x28;
+	cipherKey[0][0] = 0xAB;
+	cipherKey[0][0] = 0x09;
+	cipherKey[0][0] = 0x7E;
+	cipherKey[0][0] = 0xAE;
+	cipherKey[0][0] = 0xF7;
+	cipherKey[0][0] = 0xCF;
+	cipherKey[0][0] = 0x15;
+	cipherKey[0][0] = 0xD2;
+	cipherKey[0][0] = 0x15;
+	cipherKey[0][0] = 0x4F;
+	cipherKey[0][0] = 0x16;
+	cipherKey[0][0] = 0xA6;
+	cipherKey[0][0] = 0x88;
+	cipherKey[0][0] = 0x3C;
+
+}
 
 
 //*****************************************************************************
@@ -200,8 +174,7 @@ KeyIVGenerator()
 //****************************************************************************
 unsigned char getSBoxValue(unsigned char num)
 {
-	unsigned char abcd = sbox[num];
-	return abcd;
+	return sbox[num]; // returns corresponding value of the S-Box
 }
 
 
@@ -210,11 +183,12 @@ unsigned char getSBoxValue(unsigned char num)
 // Substitute Bytes
 //
 //****************************************************************************
-void SubBytes(unsigned char buffer[4][4])
+void SubBytes()
 {
+	int m = 0;
 	for(m =0; m < 4; m++){
 		for(n=0; n < 4; n++){
-			tempBuffer[n][m] = getSBoxValue(buffer[n][m]);
+			state[n][m] = getSBoxValue(state[n][m]); // find value in table and replace
 		}
 	}
 }
@@ -225,17 +199,23 @@ void SubBytes(unsigned char buffer[4][4])
 // Shift Rows
 //
 //*****************************************************************************
-void
-ShiftRows(unsigned char buffer1[4][4])
+void ShiftRows()
 {
 	for(p = 0; p < 4 ; p++){
 		x = p;
 		for(k =0; k < 4; k++){
-			tempBuffer[q][p] = buffer1[q][x % 4];
+			tempBuffer[k][p] = state[k][x % 4]; // calculate position for each element
 			x++;
 		}
 	}
+
+	int a1;
+	int a2;
+	for(a1 = 0; a1 < 4; a1++)
+		for(a2 = 0; a2 < 4 ; a2++)
+			state[a2][a1] = tempBuffer[a2][a1]; // copy temp to state buffer
 }
+
 
 //*****************************************************************************
 //
@@ -263,7 +243,7 @@ char MultBy2(char num1)
 // Multiply by 3
 //
 //*****************************************************************************
-// Used in MixRows operation
+// Used in MixColumns operation
 char MultBy3(char num2)
 {
 	char result2;
@@ -279,13 +259,13 @@ char MultBy3(char num2)
 	return result2;
 }
 
+
 //*****************************************************************************
 //
 // Mix Columns
 //
 //*****************************************************************************
-void
-MixColumns(unsigned char b[4][4])
+void MixColumns()
 {
 	// Each function was computed using the Rijndael Mix Columns where
 	// 1 means no change, 2 shift left, 3 shift left and xor with original
@@ -296,18 +276,21 @@ MixColumns(unsigned char b[4][4])
 	for(i = 0; i < 4; i++)
 		for(j = 0; j < 4; j++){
 			if(i == 0)
-				tempBuffer[0][j] = (MultBy2(b[0][j]) ^ MultBy3(b[1][j]) ^ (b[2][j]) ^(b[3][j]));
+				tempBuffer[0][j] = (MultBy2(state[0][j]) ^ MultBy3(state[1][j]) ^ (state[2][j]) ^ (state[3][j]));
 			else if(i == 1)
-				tempBuffer[1][j] = ((b[0][j]) ^ MultBy2(b[1][j]) ^ MultBy3(b[2][j]) ^ (b[3][j]));
+				tempBuffer[1][j] = ((state[0][j]) ^ MultBy2(state[1][j]) ^ MultBy3(state[2][j]) ^ (state[3][j]));
 			else if(i == 2)
-				tempBuffer[2][j] = ((b[0][j]) ^ (b[1][j]) ^ MultBy2(b[2][j]) ^ MultBy3(b[3][j]));
+				tempBuffer[2][j] = ((state[0][j]) ^ (state[1][j]) ^ MultBy2(state[2][j]) ^ MultBy3(state[3][j]));
 			else if(i == 3)
-				tempBuffer[3][j] = (MultBy3(b[0][j]) ^ (b[1][j]) ^ (b[2][j]) ^ MultBy2(b[3][j]));
+				tempBuffer[3][j] = (MultBy3(state[0][j]) ^ (state[1][j]) ^ (state[2][j]) ^ MultBy2(state[3][j]));
 		}
 
-// grabar tempBuffer
-
-	SysCtlDelay(10000000);
+	// Copy tempBuffer into state
+	int a3;
+	int a4;
+	for(a3 = 0; a3 < 4; a3++)
+		for(a4 = 0; a4 < 4 ; a4++)
+			state[a4][a3] = tempBuffer[a4][a3];
 
 }
 
@@ -320,8 +303,9 @@ MixColumns(unsigned char b[4][4])
 void RotateColumn()
 {
 	//	volatile unsigned char temp;
-	for(n=0; n < 3; n++){
-		column[n][0] = expandedKey[n+1][index-1];
+	int u;
+	for(u=0; u < 3; u++){
+		column[u][0] = expandedKey[u+1][index-1];
 	}
 
 	column[3][0] = expandedKey[0][index-1];
@@ -336,32 +320,32 @@ void RotateColumn()
 //*****************************************************************************
 void SubBytesARK()
 {
-	for(i=0; i < 4; i++){
-		column[i][0] = getSBoxValue(column[i][0]);
+	int v;
+	for(v=0; v < 4; v++){
+		column[v][0] = getSBoxValue(column[v][0]);
 	}
 }
 
 
-
-
-
 //*****************************************************************************
 //
-// Expand Key
+// Key Schedule Process
 //
 //*****************************************************************************
-void expandKey() {
+void keySchedule() {
 
+	int i1;
+	int j1;
 	if(index % 4 == 0){
 		RotateColumn();
 		SubBytesARK();
-		for(i = 0; i < 4; i++){
-			expandedKey[i][index]= expandedKey[i][index-4] ^ column[i][0] ^ Rcon[i][(index/4 - 1)];
+		for(i1 = 0; i1 < 4; i1++){
+			expandedKey[i1][index]= expandedKey[i1][index-4] ^ column[i1][0] ^ Rcon[i1][(index/4 - 1)];
 		}
 	}
 	else
-		for(j = 0; j < 4; j++){
-			expandedKey[j][index] = expandedKey[j][index-1] ^ expandedKey[j][index-4];
+		for(j1 = 0; j1 < 4; j1++){
+			expandedKey[j1][index] = expandedKey[j1][index-1] ^ expandedKey[j1][index-4];
 		}
 	index++;
 }
@@ -369,21 +353,83 @@ void expandKey() {
 
 //*****************************************************************************
 //
+// Expand Key
+//
+//*****************************************************************************
+void expandKey()
+{
+	int y;
+	for(y = 0; y < 40; y++)
+		keySchedule();
+}
+
+//*****************************************************************************
+//
 // Add Round Key
 //
 //*****************************************************************************
-void
-AddRoundKey(unsigned char buffer2[4][4], unsigned char key[4][4])
+void AddRoundKey()
 {
+	int s, t;
+	int start = roundNumber*4;
+	for(s = start; s < (start+ 4); s++)
+		for(t = 0; t < 4 ; t++)
+			roundKey[t][s-roundNumber*4] = expandedKey[t][s];
+
+	roundNumber++;
+
 	// AddexpandedKey - bitwise xor state and round key
-	for(n = 0; n < 4; n++)
-		for(m = 0; m < 4; m++)
+	int n1;
+	int m1;
+	for(n1 = 0; n1 < 4; n1++)
+		for(m1 = 0; m1 < 4; m1++)
 		{
-			state[m][n] = buffer2[m][n] ^ key[m][n];
+			state[m1][n1] = state[m1][n1] ^ roundKey[m1][n1];
 		}
 }
 
 
+//*****************************************************************************
+//
+// Fill Round Constant Table
+//
+//*****************************************************************************
+void fillRoundConTable(){
+	Rcon[0][0] = 0x01;
+	Rcon[0][1] = 0x02;
+	Rcon[0][2] = 0x04;
+	Rcon[0][3] = 0x08;
+	Rcon[0][4] = 0x10;
+	Rcon[0][5] = 0x20;
+	Rcon[0][6] = 0x40;
+	Rcon[0][7] = 0x80;
+	Rcon[0][8] = 0x1B;
+	Rcon[0][9] = 0x36;
+}
+
+//*****************************************************************************
+//
+// Copy Key to the Expanded Key Buffer
+//
+//*****************************************************************************
+void copyKeyToExpandedKey(){
+	expandedKey[0][0] = 0x2B;
+	expandedKey[0][1] = 0x28;
+	expandedKey[0][2] = 0xAB;
+	expandedKey[0][3] = 0x09;
+	expandedKey[1][0] = 0x7E;
+	expandedKey[1][1] = 0xAE;
+	expandedKey[1][2] = 0xF7;
+	expandedKey[1][3] = 0xCF;
+	expandedKey[2][0] = 0x15;
+	expandedKey[2][1] = 0xD2;
+	expandedKey[2][2] = 0x15;
+	expandedKey[2][3] = 0x4F;
+	expandedKey[3][0] = 0x16;
+	expandedKey[3][1] = 0xA6;
+	expandedKey[3][2] = 0x88;
+	expandedKey[3][3] = 0x3C;
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////
 
@@ -429,184 +475,37 @@ int main(void)
 	UARTCharPut(UART0_BASE, '!');
 
 
-	////// TEST///////
 
-	state[0][0] = 0x32;
-	state[0][1] = 0x88;
-	state[0][2] = 0x31;
-	state[0][3] = 0xE0;
-	state[1][0] = 0x43;
-	state[1][1] = 0x5A;
-	state[1][2] = 0x31;
-	state[1][3] = 0x37;
-	state[2][0] = 0xF6;
-	state[2][1] = 0x30;
-	state[2][2] = 0x98;
-	state[2][3] = 0x07;
-	state[3][0] = 0xA8;
-	state[3][1] = 0x8D;
-	state[3][2] = 0xA2;
-	state[3][3] = 0x34;
+	// Getting plaintext to be encrypted
+	getNextPhotoBlock();
 
-	cipherKey[0][0] = 0x2B;
-	cipherKey[0][0] = 0x28;
-	cipherKey[0][0] = 0xAB;
-	cipherKey[0][0] = 0x09;
-	cipherKey[0][0] = 0x7E;
-	cipherKey[0][0] = 0xAE;
-	cipherKey[0][0] = 0xF7;
-	cipherKey[0][0] = 0xCF;
-	cipherKey[0][0] = 0x15;
-	cipherKey[0][0] = 0xD2;
-	cipherKey[0][0] = 0x15;
-	cipherKey[0][0] = 0x4F;
-	cipherKey[0][0] = 0x16;
-	cipherKey[0][0] = 0xA6;
-	cipherKey[0][0] = 0x88;
-	cipherKey[0][0] = 0x3C;
+	// Key
+	generateKey();
 
+	// Putting key in the expanded key buffer
+	copyKeyToExpandedKey();
 
-	expandedKey[0][0] = 0x2B;
-	expandedKey[0][1] = 0x28;
-	expandedKey[0][2] = 0xAB;
-	expandedKey[0][3] = 0x09;
-	expandedKey[1][0] = 0x7E;
-	expandedKey[1][1] = 0xAE;
-	expandedKey[1][2] = 0xF7;
-	expandedKey[1][3] = 0xCF;
-	expandedKey[2][0] = 0x15;
-	expandedKey[2][1] = 0xD2;
-	expandedKey[2][2] = 0x15;
-	expandedKey[2][3] = 0x4F;
-	expandedKey[3][0] = 0x16;
-	expandedKey[3][1] = 0xA6;
-	expandedKey[3][2] = 0x88;
-	expandedKey[3][3] = 0x3C;
+	// Fill round constant (Rcon) Table
+	fillRoundConTable();
 
+	// Call to expanded key function
+	expandKey();
 
-	AddRoundKey(state, cipherKey);
+	// Encryption Process
+	AddRoundKey();
 
-	int st;
+	int t1;
 
-	for(st = 0; st < 9; st++){
-		SubBytes(state);
-		ShiftRows(state);
-		MixColumns(state);
-		AddRoundKey(state, );
+	for(t1 = 0; t1 < 9; t1++){
+		SubBytes();
+		ShiftRows();
+		MixColumns();
+		AddRoundKey();
 	}
 
-	SubBytes(state);
-	ShiftRows(state);
-	AddRoundKey(state, );
-
-	//	// Fill Photo Buffer with Dummy Data
-	//	SysCtlDelay(10000000);
-	//	for(k = 0; k < 128; k++)
-	//		photo1[k] = k;
-	//	int index1 = 0;
-	//	// Copy 128-bit block into state buffer
-	//	for(j = 0; j < 4; j++){
-	//		for(l = 0; l < 4; l++){
-	//			state[l][j] = photo1[index1];
-	//			index1++;
-	//		}
-	//	}
-	//
-	//	// Fill Rcon Table
-	//	Rcon[0][0] = 0x01;
-	//	Rcon[0][1] = 0x02;
-	//	Rcon[0][2] = 0x04;
-	//	Rcon[0][3] = 0x08;
-	//	Rcon[0][4] = 0x10;
-	//	Rcon[0][5] = 0x20;
-	//	Rcon[0][6] = 0x40;
-	//	Rcon[0][7] = 0x80;
-	//	Rcon[0][8] = 0x1B;
-	//	Rcon[0][9] = 0x36;
-
-
-
-
-	//Testing methods
-
-	//SubBytes(state); OK
-	//ShiftRows(state); OK
-	//expandedKey[0][0] = MultBy2(0xA0); OK
-	//expandedKey[0][0] = MultBy3(0xA0); OK
-	//
-	//
-	//	state[0][0] = 0xD4;
-	//	state[0][1] = 0xE0;
-	//	state[0][2] = 0xB8;
-	//	state[0][3] = 0x1E;
-	//	state[1][0] = 0xBF;
-	//	state[1][1] = 0xB4;
-	//	state[1][2] = 0x41;
-	//	state[1][3] = 0x27;
-	//	state[2][0] = 0x5D;
-	//	state[2][1] = 0x52;
-	//	state[2][2] = 0x11;
-	//	state[2][3] = 0x98;
-	//	state[3][0] = 0x30;
-	//	state[3][1] = 0xAE;
-	//	state[3][2] = 0xF1;
-	//	state[3][3] = 0xE5;
-	//
-	//	SysCtlDelay(10000000);
-	//
-	//	MixColumns(state);  // OK
-
-
-	//Testing expandedKey
-
-	//	expandedKey[0][0] = 0x2B;
-	//	expandedKey[0][1] = 0x28;
-	//	expandedKey[0][2] = 0xAB;
-	//	expandedKey[0][3] = 0x09;
-	//	expandedKey[1][0] = 0x7E;
-	//	expandedKey[1][1] = 0xAE;
-	//	expandedKey[1][2] = 0xF7;
-	//	expandedKey[1][3] = 0xCF;
-	//	expandedKey[2][0] = 0x15;
-	//	expandedKey[2][1] = 0xD2;
-	//	expandedKey[2][2] = 0x15;
-	//	expandedKey[2][3] = 0x4F;
-	//	expandedKey[3][0] = 0x16;
-	//	expandedKey[3][1] = 0xA6;
-	//	expandedKey[3][2] = 0x88;
-	//	expandedKey[3][3] = 0x3C;
-	//
-	//	int rk;
-	//	for (rk= 0; rk < 40; rk++)
-	//	{
-	//		expandKey();
-	//	}
-
-	//	///// Zero Padding
-	//	// Checking if data is divisible by 128 bits (16 bytes)
-	//	if(count % 16 != 0)
-	//		count = 16 - (count % 16); // zero padding
-
-
-
-	//char num1 = 0xA0;
-	//char result1;// = num1 & 0x0F;
-	//char result2;// = num1 & 0x80;
-	//
-	//result1 = (0x80 & 0x80);
-	//result2 = (num1 & 0xF0);
-	//
-	//expandedKey[0][0] = (0x80 & 0x80);
-	//expandedKey[0][1] = result2;;
-	//	//
-	//		int n1;
-	//		int n2;
-	//	//
-	//		n1 = (int)expandedKey[0][0];
-	//		n2 = (int)expandedKey[0][1];
-	//	//
-	//		photo1[0] = n1;
-	//		photo1[1] = n2;
+	SubBytes();
+	ShiftRows();
+	AddRoundKey();
 
 	while(1){}
 
