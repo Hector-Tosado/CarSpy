@@ -1,17 +1,14 @@
+// Camera
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
 #include "inc/hw_ints.h"
-#include "driverlib/sysctl.h"
 #include "driverlib/gpio.h"
 #include "driverlib/uart.h"
-#include "driverlib/pin_map.h"
-#include "driverlib/rom_map.h"
 #include "driverlib/interrupt.h"
-#include "utils/uartstdio.h"
-#include "string.h"
-#include "stdio.h"
-#include "driverlib/flash.h"
 
+
+
+// Variables for camera
 volatile char response[100];
 volatile char photo[13000];
 volatile int a;
@@ -20,10 +17,10 @@ char temp;
 int EndFlag = 0;
 int StartFlag = 0;
 int READ = 0;
-int i = 0;
-int j = 0;
-int k = 0;
+int i, j, k = 0;
 volatile int count = 0;
+unsigned char command[16];
+
 
 
 //*****************************************************************************
@@ -65,19 +62,21 @@ UARTReceive(unsigned long ulBase, volatile char pucBuffer[])
 			// Read the next character from the UART
 			cChar = UARTCharGet(ulBase);
 
+			// Discard first 5 characters
 			if(i >=5)
 			{
 				pucBuffer[count++] = cChar;
 
-				// new code
+				// If data reaches FF D9
 				if((temp == 255) && (cChar == 217)){
 					EndFlag = 1;
 				}
 
 				temp = cChar;
 			}
+
 			i++;
-			//Print device response to terminal
+			//Print device (photo) response to terminal
 			//UARTCharPut(UART0_BASE, cChar);
 		}
 	}
@@ -96,15 +95,11 @@ UARTReceive(unsigned long ulBase, volatile char pucBuffer[])
 
 
 
-
-
-
-
 //*****************************************************************************
 //
 // The UART interrupt handler.
 //
-//****************************************************************************
+//*****************************************************************************
 void
 UART1IntHandler(void)
 {
@@ -116,7 +111,8 @@ UART1IntHandler(void)
 	// Clear the asserted interrupts.
 	UARTIntClear(UART1_BASE, ulStatus);
 
-	// Mientras haya data en el UART1
+	// If there is data in the UART call Receive function
+	// with corresponding buffer
 	if(READ == 1)
 		UARTReceive(UART1_BASE, photo);
 	else
@@ -125,33 +121,107 @@ UART1IntHandler(void)
 }
 
 
-//////////////////////////////////////////////////////////////////////////////////////////
+void resetCamera(){
+	//Reset Command
+	command[0] = 86; 	// 0x56
+	command[1] = 00; 	// 0x00
+	command[2] = 38;	// 0x26
+	command[3] = 00;	// 0x00
+
+	// Send to UART0 using UARTSend
+	UARTSend((unsigned long)UART0_BASE, command, sizeof(command));
+
+	// Send to UART1 using UARTSend
+	UARTSend((unsigned long)UART1_BASE, command, sizeof(command));
+}
+
+
+void takePhoto(){
+
+	// Take Picture Command
+	command[0] = 86;	// 0x56
+	command[1] = 00;	// 0x00
+	command[2] = 54;	// 0x36
+	command[3] = 01;	// 0x01
+	command[4] = 00;	// 0x00
+
+	// Delay 2-3 secs before taking picture
+	SysCtlDelay(15000000); // @ 50MHz each MCU cycle is 20ns
+
+	// Send to UART0 using UARTSend
+	UARTSend((unsigned long)UART0_BASE, command, sizeof(command));
+
+	// Send to UART1 using UARTSend
+	UARTSend((unsigned long)UART1_BASE, command, sizeof(command));
+}
+
+
+void readPhotoLength(){
+	// Read JPEG file size command
+	command[0] = 86;	// 0x56
+	command[1] = 00;	// 0x00
+	command[2] = 52;	// 0x34
+	command[3] = 01;	// 0x01
+	command[4] = 00;	// 0x00
+
+	// Delay 2-3 secs before taking picture
+	SysCtlDelay(150000000); // @ 50MHz each MCU cycle is 20ns
+
+	// Send to UART0 using UARTSend
+	UARTSend((unsigned long)UART0_BASE, command, sizeof(command));
+
+	// Send to UART1 using UARTSend
+	UARTSend((unsigned long)UART1_BASE, command, sizeof(command));
+}
+
+
+void readPhoto(){
+		// Read JPEG file content
+
+		// Delay 2-3 secs before reading data
+		SysCtlDelay(15000000); // @ 50MHz each MCU cycle is 20ns
+
+		command[0] = 86;	// 0x56
+		command[1] = 00;	// 0x00
+		command[2] = 50;	// 0x32
+		command[3] = 12;	// 0x0C
+		command[4] = 00;	// 0x00
+		command[5] = 10; 	// 0x0A
+		command[6] = 00;	// 0x00
+		command[7] = 00;	// 0x00
+		command[8] = 00;	// 0xMM
+		command[9] = 00;	// 0xMM
+		command[10] = 00;	// 0x00
+		command[11] = 00;	// 0x00
+		command[12] = 50;	// 0xKK - 0x00                 // KK es el tamano de la foto
+		command[13] = 200;	// 0xKK - 0x20                 //50 200 dec es 13KB
+		command[14] = 00;	// 0xXX - 0x00
+		command[15] = 10;	// 0xXX - 0x0A
+		a += 32;
+
+		// Delay 2-3 secs before reading data
+		SysCtlDelay(15000000); // @ 50MHz each MCU cycle is 20ns
+
+		// READ Flag
+		READ = 1;
+
+		// Send to UART0 using UARTSend
+		UARTSend((unsigned long)UART0_BASE, command, sizeof(command));
+
+		// Send to UART1 using UARTSend
+		UARTSend((unsigned long)UART1_BASE, command, sizeof(command));
+
+}
+
+
 
 int main(void)
 {
-	unsigned char bytes[16];
-	unsigned char a = 0;
-	unsigned int MH;
-	unsigned int ML;
 
-	//char KH;
-	//char KL;
-	//volatile char pulData[8];
-	//unsigned long pulRead[2];
-	//Word 1. Word is of 32 bits.
-	//	pulData[0] = 0x12;
-	//	pulData[1] = 0x34;
-	//	pulData[2] = 0x56;
-	//	pulData[3] = 0x78;
-	//	//Word 2
-	//	pulData[4] = 0x11;
-	//	pulData[5] = 0x22;
-	//	pulData[6] = 0x33;
-	//	pulData[7] = 0x44;
 	// Setear clock
 	SysCtlClockSet(SYSCTL_SYSDIV_4 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
 
-	//Configuracion de los puertos UART que se van a usar en el micro
+	// Configuring UART ports
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART1);
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
 
@@ -167,12 +237,11 @@ int main(void)
 	GPIOPinConfigure(0x00010001);//GPIO_PB0_U0RX
 	GPIOPinConfigure(0x00010401);//GPIO_PB1_U0TX
 
-	// Since GPIO A0 and A1 are used for the UART function, they must be
-	// configured for use as a peripheral function (instead of GPIO).
+	// configure GPIO A0 and A1 for use as a peripherals.
 	GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
 	GPIOPinTypeUART(GPIO_PORTB_BASE, GPIO_PIN_0 | GPIO_PIN_1);
 
-	// Configure the UART for 115,200, 8-N-1 operation.
+	// Configure the UART for 38,400, 8-N-1 operation.
 	UARTConfigSetExpClk(UART0_BASE, SysCtlClockGet(), 38400,
 			(UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
 					UART_CONFIG_PAR_NONE));
@@ -184,144 +253,17 @@ int main(void)
 	IntEnable(INT_UART1);
 	UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT);
 
-	// Put a character to show start of example. This will display on the terminal.
+	// Put a character on terminal to indicate start.
 	UARTCharPut(UART0_BASE, '!');
 
 
-	/////////////////////////////////////////////////////////////////////////////
-	//Reset Command
-	bytes[0] = 86; 	// 0x56
-	bytes[1] = 00; 	// 0x00
-	bytes[2] = 38;	// 0x26
-	bytes[3] = 00;	// 0x00
+	resetCamera();
+	takePhoto();
+	readPhotoLength();
+	readPhoto();
 
-	// Send to UART0 using UARTSend
-	UARTSend((unsigned long)UART0_BASE, bytes, sizeof(bytes));
 
-	// DELAY??
-
-	// Send to UART1 using UARTSend
-	UARTSend((unsigned long)UART1_BASE, bytes, sizeof(bytes));
-
-	/////////////////////////////////////////////////////////////////////////////
-	// Change Baud Rate Command (for a 115200 baud rate)
-	//	bytes[0] = 86; 	// 0x56
-	//	bytes[1] = 00; 	// 0x00
-	//	bytes[2] = 36;	// 0x24
-	//	bytes[3] = 03;	// 0x03
-	//	bytes[4] = 01;	// 0x01
-	//	bytes[5] = 13;	// 0x0D = 13 (para 115200)    or 1C = 28
-	//	bytes[6] = 166;	// 0xA6 = 166 or 4C = 76
-	//
-	//
-	//	// Delay 2-3 secs before taking picture
-	//	SysCtlDelay(150000000); // @ 50MHz each MCU cycle is 20ns
-	//
-	//	// Send to UART0 using UARTSend
-	//	UARTSend((unsigned long)UART0_BASE, bytes, sizeof(bytes));
-	//
-	//	// DELAY??
-	//
-	//	// Send to UART1 using UARTSend
-	//	UARTSend((unsigned long)UART1_BASE, bytes, sizeof(bytes));
-
-	/////////////////////////////////////////////////////////////////////////////
-	// Take Picture Command
-	bytes[0] = 86;	// 0x56
-	bytes[1] = 00;	// 0x00
-	bytes[2] = 54;	// 0x36
-	bytes[3] = 01;	// 0x01
-	bytes[4] = 00;	// 0x00
-
-	// Delay 2-3 secs before taking picture
-	SysCtlDelay(150000000); // @ 50MHz each MCU cycle is 20ns
-
-	// Send to UART0 using UARTSend
-	UARTSend((unsigned long)UART0_BASE, bytes, sizeof(bytes));
-
-	// DELAY??
-
-	// Send to UART1 using UARTSend
-	UARTSend((unsigned long)UART1_BASE, bytes, sizeof(bytes));
-	/////////////////////////////////////////////////////////////////////////////
-
-	/////////////////////////////////////////////////////////////////////////////
-	// Read JPEG file size command
-	bytes[0] = 86;	// 0x56
-	bytes[1] = 00;	// 0x00
-	bytes[2] = 52;	// 0x34
-	bytes[3] = 01;	// 0x01
-	bytes[4] = 00;	// 0x00
-
-	// Delay 2-3 secs before taking picture
-	SysCtlDelay(150000000); // @ 50MHz each MCU cycle is 20ns
-
-	// Send to UART0 using UARTSend
-	UARTSend((unsigned long)UART0_BASE, bytes, sizeof(bytes));
-
-	// DELAY??
-
-	// Send to UART1 using UARTSend
-	UARTSend((unsigned long)UART1_BASE, bytes, sizeof(bytes));
-	/////////////////////////////////////////////////////////////////////////////
-
-	/////////////////////////////////////////////////////////////////////////////
-	// Read JPEG file content
-	//int length = strlen((const char*)response);
-	//KH = response[length-2];
-	//KL = response[length-1];
-
-	//memset((void*)response, 0, 100);
-
-	// Delay 2-3 secs before reading data
-	SysCtlDelay(150000000); // @ 50MHz each MCU cycle is 20ns
-
-	MH = a/256;
-	ML = a%256;
-	bytes[0] = 86;	// 0x56
-	bytes[1] = 00;	// 0x00
-	bytes[2] = 50;	// 0x32
-	bytes[3] = 12;	// 0x0C
-	bytes[4] = 00;	// 0x00
-	bytes[5] = 10; 	// 0x0A
-	bytes[6] = 00;	// 0x00
-	bytes[7] = 00;	// 0x00
-	bytes[8] = MH;	// 0xMM
-	bytes[9] = ML;	// 0xMM
-	bytes[10] = 00;	// 0x00
-	bytes[11] = 00;	// 0x00
-	bytes[12] = 50;	// 0xKK - 0x00                 // KK es el tamano de la foto
-	bytes[13] = 200;// 0xKK - 0x20                 //50 200 dec es 13KB
-	bytes[14] = 00;	// 0xXX - 0x00
-	bytes[15] = 10;	// 0xXX - 0x0A
-	a += 32;
-
-	// Delay 2-3 secs before reading data
-	SysCtlDelay(150000000); // @ 50MHz each MCU cycle is 20ns
-
-	READ = 1;
-
-	// Send to UART0 using UARTSend
-	UARTSend((unsigned long)UART0_BASE, bytes, sizeof(bytes));
-
-	// DELAY??
-
-	// Send to UART1 using UARTSend
-	UARTSend((unsigned long)UART1_BASE, bytes, sizeof(bytes));
-	/////////////////////////////////////////////////////////////////////////////
-
-//	SysCtlDelay(150000000);
-//
-//	//addr
-//
-//
-//	FlashErase(0x10000);
-//	// unsigned long length = sizeof(photo);
-//	unsigned long length = count;
-//	FlashProgram((unsigned long*)photo, 0x10000, length);
-//
-//
-//	SysCtlDelay(20000000);
+	///////////////////////////// ENCRYPTION /////////////////////////////////
 
 	while(1){}
 
