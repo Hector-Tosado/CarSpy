@@ -35,57 +35,106 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.io.*;
 
-public class KnockKnockServer {
+public class CarSpyServer {
+
+	public static char[] buf = new char[40000];
+	public static int n, s; 
+	public static int i = 0;
+	public static String str;
+	public static int packetSize = 1024;
 	public static void main(String[] args) throws IOException {
 
-		ServerSocket serverSocket = null;
-		try {
-			serverSocket = new ServerSocket(6102);
-		} catch (IOException e) {
-			System.err.println("Could not listen on port: 6102.");
-			System.exit(1);
+		while(true){
+			ServerSocket serverSocket = null;
+			try {
+				serverSocket = new ServerSocket(6102);
+			} catch (IOException e) {
+				System.err.println("Could not listen on port: 6102.");
+				System.exit(1);
+			}
+
+			Socket clientSocket = null;
+			try {
+				clientSocket = serverSocket.accept();
+			} catch (IOException e) {
+				System.err.println("Accept failed.");
+				System.exit(1);
+			}
+
+			PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
+			BufferedReader in = new BufferedReader(
+					new InputStreamReader(
+							clientSocket.getInputStream()));
+
+			System.out.println("Connection made with port 6102");
+
+			//When connection is established the program continues running. If no data is sent across in 
+			//about 1min 30s
+			//The connections is closed and all input and output streams are shut down.
+			try{	
+
+				while(clientSocket.getInputStream().available() <= 13500){}
+				while(in.ready()==true || s == 0) {
+
+					n = in.read(buf, i*packetSize, packetSize);
+					s = s + n;
+					i++;
+					
+				}
+
+			} 
+
+			catch (IOException e)
+			{
+				System.err.println("No Data Inc");
+				System.out.println("No Connection Attempt in TCP/IP");
+			}
+
+			//Notifies MCU Data Stream has been received. 
+			out.println('*');
+
+			//Size of sent data. 
+			//int rDlength = receivedData.capacity()-receivedData.length();//receivedData.capacity()
+
+			//Possible Array transformation for handling data. Works well for testing purposes.
+			//char[] recDataArray = receivedData.array();
+			//int length = buf.length;
+			//Prints our all data received.
+
+			out.println("LAST n = " + n + " s = "+ s + " i ="+ i);
+
+
+			for(int j = 0; j < s; j++)
+			{
+				System.out.print(buf[j]);
+			}
+
+			str = new String(buf);
+
+			if(str.contains("endstream"))
+			{
+				System.out.println("Endstream Found\n\n");
+			}
+
+			str = str.trim();
+			System.out.println("\nTrimmed Length = " + str.length());
+			//System.out.println(str+"\n");
+			
+			str = str.substring(0, 13500);
+			System.out.println(str+"\n");
+
+			//		for(int j = (s-n); j < s; j++)
+			//		{
+			//			System.out.print(""+j+ "="+buf[j]);
+			//		}
+			//i++;
+			//if (recDataArray
+			s = 0;
+			i = 0;
+			out.close();
+			in.close();
+			clientSocket.close();
+			serverSocket.close();
 		}
-
-		Socket clientSocket = null;
-		try {
-			clientSocket = serverSocket.accept();
-		} catch (IOException e) {
-			System.err.println("Accept failed.");
-			System.exit(1);
-		}
-
-		PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
-		BufferedReader in = new BufferedReader(
-				new InputStreamReader(
-						clientSocket.getInputStream()));
-
-		System.out.println("Connection made with port 6102");
-		out.println("Connection Established");
-
-		//int i = 0;
-		CharBuffer receivedData = CharBuffer.allocate(1000);
-		//When connection is established the program continues running. If no data is sent across in about 1min 30s
-		//The connections is closed and all input and output streams are shut down.
-		in.read(receivedData);
-
-		//Notifies MCU Data Stream has been received. 
-		out.println('*');
-		
-		//Size of sent data. 
-		int rDlength = receivedData.capacity()-receivedData.length();//receivedData.capacity()
-
-		//Possible Array transformation for handling data. Works well for testing purposes.
-		char[] recDataArray = receivedData.array();
-		
-		//Prints our all data received. 
-		for(int j = 0; j < rDlength; j++)
-		{
-			System.out.print(recDataArray[j]);
-		}
-
-		out.close();
-		in.close();
-		clientSocket.close();
-		serverSocket.close();
 	}
 }
