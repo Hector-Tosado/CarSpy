@@ -1,0 +1,2281 @@
+#include <string.h>
+#include "inc/hw_memmap.h"
+#include "inc/hw_types.h"
+#include "driverlib/gpio.h"
+#include "driverlib/interrupt.h"
+#include "driverlib/sysctl.h"
+#include "driverlib/systick.h"
+#include "utils/cmdline.h"
+#include "utils/uartstdio.h"
+#include "fatfs/src/ff.h"
+#include "fatfs/src/diskio.h"
+#include "inc/hw_ints.h"
+#include "driverlib/timer.h"
+// Camera
+#include "inc/hw_memmap.h"
+//#include "inc/hw_types.h"
+#include "inc/hw_ints.h"
+//#include "driverlib/gpio.h"
+#include "driverlib/uart.h"
+//#include "driverlib/interrupt.h"
+//*****************************************************************************
+//
+//! \addtogroup example_list
+//! <h1>SD card using FAT file system (sd_card)</h1>
+//!
+//! This example application demonstrates reading a file system from
+//! an SD card.  It makes use of FatFs, a FAT file system driver.  It
+//! provides a simple command console via a serial port for issuing commands
+//! to view and navigate the file system on the SD card.
+//!
+//! The first UART, which is connected to the FTDI virtual serial port
+//! on the Stellaris LM3S6965 Evaluation Board, is configured for 115,200
+//! bits per second, and 8-n-1 mode.  When the program is started a message
+//! will be printed to the terminal.  Type ``help'' for command help.
+//!
+//! For additional details about FatFs, see the following site:
+//! http://elm-chan.org/fsw/ff/00index_e.html
+//
+//*****************************************************************************
+
+//*****************************************************************************
+//
+// Defines the size of the buffers that hold the path, or temporary
+// data from the SD card.  There are two buffers allocated of this size.
+// The buffer size must be large enough to hold the longest expected
+// full path name, including the file name, and a trailing null character.
+//
+//*****************************************************************************
+#define PATH_BUF_SIZE   80
+
+//*****************************************************************************
+//
+// Defines the size of the buffer that holds the command line.
+//
+//*****************************************************************************
+#define CMD_BUF_SIZE    64
+
+//*****************************************************************************
+//
+// This buffer holds the full path to the current working directory.
+// Initially it is root ("/").
+//
+//*****************************************************************************
+static char g_cCwdBuf[PATH_BUF_SIZE] = "/";
+
+
+//Data to be Stored using the write commmand function
+//char photo[] ="0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,"
+//  	"0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0, 0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0,"
+//		"0xB7, 0xFD, 0x93, 0x26, 0x36, 0x3F, 0xF7, 0xCC, 0x34, 0xA5, 0xE5, 0xF1, 0x71, 0xD8, 0x31, 0x15,"
+//		"0x04, 0xC7, 0x23, 0xC3, 0x18, 0x96, 0x05, 0x9A, 0x07, 0x12, 0x80, 0xE2, 0xEB, 0x27, 0xB2, 0x75,"
+//		"0x09, 0x83, 0x2C, 0x1A, 0x1B, 0x6E, 0x5A, 0xA0, 0x52, 0x3B, 0xD6, 0xB3, 0x29, 0xE3, 0x2F, 0x84,"
+//		"0x53, 0xD1, 0x00, 0xED, 0x20, 0xFC, 0xB1, 0x5B, 0x6A, 0xCB, 0xBE, 0x39, 0x4A, 0x4C, 0x58, 0xCF,"
+//		"0xD0, 0xEF, 0xAA, 0xFB, 0x43, 0x4D, 0x33, 0x85, 0x45, 0xF9, 0x02, 0x7F, 0x50, 0x3C, 0x9F, 0xA8,"
+//		"0x51, 0xA3, 0x40, 0x8F, 0x92, 0x9D, 0x38, 0xF5, 0xBC, 0xB6, 0xDA, 0x21, 0x10, 0xFF, 0xF3, 0xD2,"
+//		"0xCD, 0x0C, 0x13, 0xEC, 0x5F, 0x97, 0x44, 0x17, 0xC4, 0xA7, 0x7E, 0x3D, 0x64, 0x5D, 0x19, 0x73,"
+//		"0x60, 0x81, 0x4F, 0xDC, 0x22, 0x2A, 0x90, 0x88, 0x46, 0xEE, 0xB8, 0x14, 0xDE, 0x5E, 0x0B, 0xDB,"
+//		"0xE0, 0x32, 0x3A, 0x0A, 0x49, 0x06, 0x24, 0x5C, 0xC2, 0xD3, 0xAC, 0x62, 0x91, 0x95, 0xE4, 0x79,"
+//		"0xE7, 0xC8, 0x37, 0x6D, 0x8D, 0xD5, 0x4E, 0xA9, 0x6C, 0x56, 0xF4, 0xEA, 0x65, 0x7A, 0xAE, 0x08,"
+//		"0xBA, 0x78, 0x25, 0x2E, 0x1C, 0xA6, 0xB4, 0xC6, 0xE8, 0xDD, 0x74, 0x1F, 0x4B, 0xBD, 0x8B, 0x8A,"
+//		"0x70, 0x3E, 0xB5, 0x66, 0x48, 0x03, 0xF6, 0x0E, 0x61, 0x35, 0x57, 0xB9, 0x86, 0xC1, 0x1D, 0x9E,"
+//		"0xE1, 0xF8, 0x98, 0x11, 0x69, 0xD9, 0x8E, 0x94, 0x9B, 0x1E, 0x87, 0xE9, 0xCE, 0x55, 0x28, 0xDF,"
+//		"0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16";
+
+char GPSCoordinate[]= "$GPRMC,064951.000,A,2307.1256,N,12016.4438,E,0.03,165.48,260406,3.05,W,A*2C";
+
+
+//*****************************************************************************
+//
+// A temporary data buffer used when manipulating file paths, or reading data
+// from the SD card.
+//
+//*****************************************************************************
+static char g_cTmpBuf[PATH_BUF_SIZE];
+
+//*****************************************************************************
+//
+// The buffer that holds the command line.
+//
+//*****************************************************************************
+static char g_cCmdBuf[CMD_BUF_SIZE];
+char readOrigin[CMD_BUF_SIZE]="read origin.txt";
+char readFinal[CMD_BUF_SIZE]="read finalS.txt";
+//*****************************************************************************
+//
+// The following are data structures used by FatFs.
+//
+//*****************************************************************************
+static FATFS g_sFatFs;
+static DIR g_sDirObject;
+static FILINFO g_sFileInfo;
+static FIL g_sFileObject;
+
+//*****************************************************************************
+//
+// A structure that holds a mapping between an FRESULT numerical code,
+// and a string represenation.  FRESULT codes are returned from the FatFs
+// FAT file system driver.
+//
+//*****************************************************************************
+typedef struct
+{
+	FRESULT fresult;
+	char *pcResultStr;
+}
+tFresultString;
+
+//*****************************************************************************
+//
+// A macro to make it easy to add result codes to the table.
+//
+//*****************************************************************************
+#define FRESULT_ENTRY(f)        { (f), (#f) }
+
+//*****************************************************************************
+//
+// A table that holds a mapping between the numerical FRESULT code and
+// it's name as a string.  This is used for looking up error codes for
+// printing to the console.
+//
+//*****************************************************************************
+tFresultString g_sFresultStrings[] =
+{
+		FRESULT_ENTRY(FR_OK),
+		FRESULT_ENTRY(FR_NOT_READY),
+		FRESULT_ENTRY(FR_NO_FILE),
+		FRESULT_ENTRY(FR_NO_PATH),
+		FRESULT_ENTRY(FR_INVALID_NAME),
+		FRESULT_ENTRY(FR_INVALID_DRIVE),
+		FRESULT_ENTRY(FR_DENIED),
+		FRESULT_ENTRY(FR_EXIST),
+		FRESULT_ENTRY(FR_RW_ERROR),
+		FRESULT_ENTRY(FR_WRITE_PROTECTED),
+		FRESULT_ENTRY(FR_NOT_ENABLED),
+		FRESULT_ENTRY(FR_NO_FILESYSTEM),
+		FRESULT_ENTRY(FR_INVALID_OBJECT),
+		FRESULT_ENTRY(FR_MKFS_ABORTED)
+};
+
+//*****************************************************************************
+//
+// A macro that holds the number of result codes.
+//
+//*****************************************************************************
+#define NUM_FRESULT_CODES (sizeof(g_sFresultStrings) / sizeof(tFresultString))
+
+//*****************************************************************************
+//
+// Variabls to be used in the Simulation Command
+//
+//*****************************************************************************
+
+int sessionFlag=0;
+int sessionItem=0;
+int newDirectoryFlag=0;
+// Variables for camera
+volatile char response[100];
+volatile char photo[13100];
+volatile int a;
+char cChar;
+char temp;
+int EndFlag = 0;
+int StartFlag = 0;
+int READ = 0;
+int respBitNum = 0;
+volatile int count = 0;
+unsigned char command[16];
+
+
+// Variables for Encryption
+volatile char state[4][4]; // temp, 128-bit blocks
+volatile char photo2[16];
+unsigned char tempBuffer[4][4];
+unsigned char cipherKey[4][4] ; // 128-bit key
+unsigned char initVector[4][4]; // 128-bit key
+unsigned char expandedKey[4][44];
+int i, l, j, k, m, n, x, p, q, o, lol= 0;
+volatile unsigned char Rcon[4][10];
+volatile unsigned char column[4][1];
+int index = 4;
+unsigned char roundKey[4][4];
+volatile int roundNumber = 0;
+volatile int marker = 0;
+volatile int marker2 = 0;
+volatile int marker3 = 0;
+int r1, r2 = 0;
+int p1, p2 = 0;
+int z = 0;
+int y;
+int w;
+
+
+//Variables for GPS
+volatile char response2[1000];
+//volatile char command[1000];
+int a3;
+int count2=0;
+char cChar;
+int foundflag=0;
+int flagP=0;
+int validCount=0;
+volatile char coordinates[100];
+int coordinatesCount=0;
+int coordinatesSize=0;
+char proof1[4];
+char proof2[4];
+int resultCompare=0;
+char cCharS;
+volatile long int gt=1000000;
+volatile long int seg=1000000;//
+//variables for Sensor
+volatile int sensorFlag=0;
+
+//Rijndael S-Box Table
+unsigned char sbox[256] =
+{
+		0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
+		0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0, 0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0,
+		0xB7, 0xFD, 0x93, 0x26, 0x36, 0x3F, 0xF7, 0xCC, 0x34, 0xA5, 0xE5, 0xF1, 0x71, 0xD8, 0x31, 0x15,
+		0x04, 0xC7, 0x23, 0xC3, 0x18, 0x96, 0x05, 0x9A, 0x07, 0x12, 0x80, 0xE2, 0xEB, 0x27, 0xB2, 0x75,
+		0x09, 0x83, 0x2C, 0x1A, 0x1B, 0x6E, 0x5A, 0xA0, 0x52, 0x3B, 0xD6, 0xB3, 0x29, 0xE3, 0x2F, 0x84,
+		0x53, 0xD1, 0x00, 0xED, 0x20, 0xFC, 0xB1, 0x5B, 0x6A, 0xCB, 0xBE, 0x39, 0x4A, 0x4C, 0x58, 0xCF,
+		0xD0, 0xEF, 0xAA, 0xFB, 0x43, 0x4D, 0x33, 0x85, 0x45, 0xF9, 0x02, 0x7F, 0x50, 0x3C, 0x9F, 0xA8,
+		0x51, 0xA3, 0x40, 0x8F, 0x92, 0x9D, 0x38, 0xF5, 0xBC, 0xB6, 0xDA, 0x21, 0x10, 0xFF, 0xF3, 0xD2,
+		0xCD, 0x0C, 0x13, 0xEC, 0x5F, 0x97, 0x44, 0x17, 0xC4, 0xA7, 0x7E, 0x3D, 0x64, 0x5D, 0x19, 0x73,
+		0x60, 0x81, 0x4F, 0xDC, 0x22, 0x2A, 0x90, 0x88, 0x46, 0xEE, 0xB8, 0x14, 0xDE, 0x5E, 0x0B, 0xDB,
+		0xE0, 0x32, 0x3A, 0x0A, 0x49, 0x06, 0x24, 0x5C, 0xC2, 0xD3, 0xAC, 0x62, 0x91, 0x95, 0xE4, 0x79,
+		0xE7, 0xC8, 0x37, 0x6D, 0x8D, 0xD5, 0x4E, 0xA9, 0x6C, 0x56, 0xF4, 0xEA, 0x65, 0x7A, 0xAE, 0x08,
+		0xBA, 0x78, 0x25, 0x2E, 0x1C, 0xA6, 0xB4, 0xC6, 0xE8, 0xDD, 0x74, 0x1F, 0x4B, 0xBD, 0x8B, 0x8A,
+		0x70, 0x3E, 0xB5, 0x66, 0x48, 0x03, 0xF6, 0x0E, 0x61, 0x35, 0x57, 0xB9, 0x86, 0xC1, 0x1D, 0x9E,
+		0xE1, 0xF8, 0x98, 0x11, 0x69, 0xD9, 0x8E, 0x94, 0x9B, 0x1E, 0x87, 0xE9, 0xCE, 0x55, 0x28, 0xDF,
+		0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16
+};
+
+
+//*****************************************************************************
+//
+// This function returns a string representation of an error code
+// that was returned from a function call to FatFs.  It can be used
+// for printing human readable error messages.
+//
+//*****************************************************************************
+//*****************************************************************************
+//
+// Send command to the UART.
+//
+//*****************************************************************************
+void
+UARTSend(unsigned long ulBase, const unsigned char *pucBuffer, unsigned long ulCount)
+{
+	//
+	// Loop while there are more characters to send.
+	//
+	while(ulCount--)
+	{
+		//
+		// Write the next character to the UART.
+		//
+		UARTCharPut(ulBase, *pucBuffer++);
+	}
+}
+
+
+
+//*****************************************************************************
+//
+// Receive response from the UART.
+//
+//*****************************************************************************
+void
+UARTReceive(unsigned long ulBase, volatile char pucBuffer[])
+{
+	//
+	// Loop while there are more characters to send.
+	//
+	if(READ==1){ // Photo raw data
+		while(UARTCharsAvail(ulBase) && !EndFlag)
+		{
+			// Read the next character from the UART
+			cChar = UARTCharGet(ulBase);
+
+			// Discard first 5 characters
+			if(respBitNum >=5)
+			{
+				pucBuffer[count++] = cChar;
+
+				// If data reaches FF D9
+				if((temp == 255) && (cChar == 217)){
+					EndFlag = 1;
+				}
+
+				temp = cChar;
+			}
+
+			respBitNum++;
+			//Print device (photo) response to terminal
+			//UARTCharPut(UART0_BASE, cChar);
+		}
+	}
+
+	else
+		while(UARTCharsAvail(ulBase))
+		{
+			// Read the next character from the UART
+			cChar = UARTCharGet(ulBase);
+			pucBuffer[a++] = cChar;
+
+			//Print device response to terminal
+			//UARTCharPut(UART0_BASE, cChar);
+		}
+}
+
+/***
+ * Reset Variables
+ */
+void
+ResetVariables(void)
+{
+
+	EndFlag = 0;
+	StartFlag = 0;
+	READ = 0;
+	respBitNum = 0;
+	count = 0;
+
+
+	// Variables for Encryption
+
+	index = 4;
+	roundNumber = 0;
+	marker = 0;
+	marker2 = 0;
+	marker3 = 0;
+
+
+	//gps variables
+
+	foundflag=0;
+	flagP=0;
+	coordinatesCount=0;
+	coordinatesSize=0;
+	resultCompare=0;
+	gt=1000000;
+	seg=1000000;//
+
+}
+//*****************************************************************************
+//
+// Receive a string from the UART of the GPS.
+//
+//*****************************************************************************
+void
+UARTReceive2(unsigned long ulBase2, volatile char pucBuffer2[])
+{
+	//
+	// Loop while there are more characters to send.
+	//
+	while(UARTCharsAvail(ulBase2))
+	{
+		// Read the next character from the UART
+		cChar = UARTCharGet(ulBase2);
+		//pucBuffer2[a++] = cChar;
+		//Start of an output command
+		if(cChar=='$')
+		{
+			coordinatesCount=0;
+			cCharS=cChar;
+
+			//loop to get output type
+			for (lol=0; lol<=2; lol++)
+			{
+
+				cChar = UARTCharGet(ulBase2);
+
+				//verifies if its coordinate output
+				if(cChar=='G')
+				{
+					flagP=1;
+				}
+
+				if (flagP==1)
+				{
+					if (lol==0)
+					{
+						coordinates[coordinatesCount]=cCharS;
+						proof2[coordinatesCount]=cCharS;
+						coordinatesCount++;
+
+						//UARTCharPut(UART0_BASE, cCharS);
+						coordinates[coordinatesCount]=cChar;
+						proof2[coordinatesCount]=cChar;
+						coordinatesCount++;
+						//UARTCharPut(UART0_BASE, cChar);
+					}
+					else
+					{
+						coordinates[coordinatesCount]=cChar;
+						proof2[coordinatesCount]=cChar;
+						coordinatesCount++;
+						UARTCharPut(UART0_BASE, cChar);
+					}
+				}
+				resultCompare = strncmp(proof1, proof2, 4);
+			}
+
+			flagP=0;
+
+			if (resultCompare==0)
+			{
+				foundflag = 1;
+				resultCompare=1;
+			}
+			else
+			{
+				//z=50000;
+				//while(z--)
+				//{}
+				coordinatesCount=0;
+			}
+		}
+		else if (foundflag==1)
+		{ 	//cChar = UARTCharGet(ulBase2);
+			coordinates[coordinatesCount++]=cChar;
+			UARTCharPut(UART0_BASE, cChar);
+		}
+
+		if (foundflag==1 && cChar =='*')
+		{
+			foundflag=0;
+			coordinatesSize=coordinatesCount;
+			if (coordinatesSize <50)
+			{
+				if(validCount==2)
+				{
+					validCount=0;
+					IntDisable(INT_UART3);
+					coordinatesCount=0;
+				}
+				else
+				{
+					validCount++;
+					coordinatesCount=0;
+				}
+
+				UARTCharPut(UART0_BASE, 26);
+				UARTCharPut(UART0_BASE, 'N');
+				UARTCharPut(UART0_BASE, 'O');
+				UARTCharPut(UART0_BASE, 26);
+			}
+			else
+			{
+				IntDisable(INT_UART3);
+				UARTCharPut(UART0_BASE, 26);
+				UARTCharPut(UART0_BASE, 'Y');
+				UARTCharPut(UART0_BASE, 'E');
+				UARTCharPut(UART0_BASE, 'S');
+				UARTCharPut(UART0_BASE, 26);
+
+			}
+
+			coordinatesCount=0;
+
+			//If coordinate is valid then the interrupt will be disable.
+			//IntDisable(INT_UART3);
+		}
+		//If not valid then try again after a delay
+		//DELAY HERE!!!
+	}
+}
+
+//*****************************************************************************
+//
+// The UART interrupt handler.
+//
+//*****************************************************************************
+void
+UART1IntHandler(void)
+{
+	unsigned long ulStatus;
+
+	// Get the interrupt status.
+	ulStatus = UARTIntStatus(UART1_BASE, true);
+
+	// Clear the asserted interrupts.
+	UARTIntClear(UART1_BASE, ulStatus);
+
+	// If there is data in the UART call Receive function
+	// with corresponding buffer
+	if(READ == 1)
+		UARTReceive(UART1_BASE, photo);
+	else
+		UARTReceive(UART1_BASE, response);
+
+}
+void
+UART3IntHandler(void)
+{
+	unsigned long ulStatus2;
+	//tBoolean bRc;
+
+	// Get the interrupt status.
+	ulStatus2 = UARTIntStatus(UART3_BASE, true);
+
+	// Clear the asserted interrupts.
+	UARTIntClear(UART3_BASE, ulStatus2);
+
+	// While there is date in uart 3
+	UARTReceive2(UART3_BASE, response2);
+
+}
+//Send commmand to GPS
+
+void resetCamera(){
+	//Reset Command
+	command[0] = 86; 	// 0x56
+	command[1] = 00; 	// 0x00
+	command[2] = 38;	// 0x26
+	command[3] = 00;	// 0x00
+
+	// Delay 2-3 secs before reading data
+	SysCtlDelay(15000000); // @ 50MHz each MCU cycle is 20ns
+
+	// Send to UART0 using UARTSend
+	//UARTSend((unsigned long)UART0_BASE, command, sizeof(command));
+
+	// Send to UART1 using UARTSend
+	UARTSend((unsigned long)UART1_BASE, command, sizeof(command));
+}
+
+
+void takePhoto(){
+
+	// Delay 2-3 secs before taking picture
+	SysCtlDelay(150000000); // @ 50MHz each MCU cycle is 20ns
+
+	// Take Picture Command
+	command[0] = 86;	// 0x56
+	command[1] = 00;	// 0x00
+	command[2] = 54;	// 0x36
+	command[3] = 01;	// 0x01
+	command[4] = 00;	// 0x00
+
+	// Delay 2-3 secs before taking picture
+	SysCtlDelay(15000000); // @ 50MHz each MCU cycle is 20ns
+
+	// Send to UART0 using UARTSend
+	//UARTSend((unsigned long)UART0_BASE, command, sizeof(command));
+
+	// Send to UART1 using UARTSend
+	UARTSend((unsigned long)UART1_BASE, command, sizeof(command));
+}
+
+
+void readPhotoLength(){
+
+	// Delay 2-3 secs before taking picture
+	SysCtlDelay(150000000); // @ 50MHz each MCU cycle is 20ns
+
+	// Read JPEG file size command
+	command[0] = 86;	// 0x56
+	command[1] = 00;	// 0x00
+	command[2] = 52;	// 0x34
+	command[3] = 01;	// 0x01
+	command[4] = 00;	// 0x00
+
+	// Delay 2-3 secs before taking picture
+	SysCtlDelay(150000000); // @ 50MHz each MCU cycle is 20ns
+
+	// Send to UART0 using UARTSend
+	//UARTSend((unsigned long)UART0_BASE, command, sizeof(command));
+
+	// Send to UART1 using UARTSend
+	UARTSend((unsigned long)UART1_BASE, command, sizeof(command));
+}
+
+
+void readPhoto(){
+	// Read JPEG file content
+
+	// Delay 2-3 secs before reading data
+	SysCtlDelay(15000000); // @ 50MHz each MCU cycle is 20ns
+
+	command[0] = 86;	// 0x56
+	command[1] = 00;	// 0x00
+	command[2] = 50;	// 0x32
+	command[3] = 12;	// 0x0C
+	command[4] = 00;	// 0x00
+	command[5] = 10; 	// 0x0A
+	command[6] = 00;	// 0x00
+	command[7] = 00;	// 0x00
+	command[8] = 00;	// 0xMM
+	command[9] = 00;	// 0xMM
+	command[10] = 00;	// 0x00
+	command[11] = 00;	// 0x00
+	command[12] = 50;	// 0xKK - 0x00                 // KK es el tamano de la foto
+	command[13] = 200;	// 0xKK - 0x20                 //50 200 dec es 13KB
+	command[14] = 00;	// 0xXX - 0x00
+	command[15] = 10;	// 0xXX - 0x0A
+	//a += 32;
+
+	// Delay 2-3 secs before reading data
+	SysCtlDelay(15000000); // @ 50MHz each MCU cycle is 20ns
+
+	// READ Flag
+	READ = 1;
+
+	// Send to UART0 using UARTSend
+	//UARTSend((unsigned long)UART0_BASE, command, sizeof(command));
+
+	// Send to UART1 using UARTSend
+	UARTSend((unsigned long)UART1_BASE, command, sizeof(command));
+
+}
+
+
+
+// *************************************************************************** //
+/////////////////////////////////// ENCRYPTION /////////////////////////////////
+// *************************************************************************** //
+
+//*****************************************************************************
+//
+// Zero Padding
+//
+//****************************************************************************
+
+void zeroPadding(){
+	// Checking if data is divisible by 128 bits (16 bytes)
+	int tempModulo = 0;
+	if(count % 16 != 0){
+		tempModulo = count % 16;
+
+		for(y = count; y < count + (16 - tempModulo); y++){
+			photo[y] = 0x00;
+		}
+
+		count = count + (16 - tempModulo); // zero padding
+
+	}
+}
+
+
+//*****************************************************************************
+//
+// Getting 128-bit (16 bytes) photo blocks for encryption
+//
+//****************************************************************************
+void getNextPhotoBlock(){
+
+	// Hardcoded Example
+	//	state[0][0] = 0x0A;
+	//	state[0][1] = 0x85;
+	//	state[0][2] = 0x30;
+	//	state[0][3] = 0x09;
+	//	state[1][0] = 0x0F;
+	//	state[1][1] = 0x5A;
+	//	state[1][2] = 0x31;
+	//	state[1][3] = 0x37;
+	//	state[2][0] = 0xF6;
+	//	state[2][1] = 0x30;
+	//	state[2][2] = 0x98;
+	//	state[2][3] = 0x07;
+	//	state[3][0] = 0xA8;
+	//	state[3][1] = 0x8D;
+	//	state[3][2] = 0xA2;
+	//	state[3][3] = 0x34;
+	// End of hardcoded example
+
+	// Delay 2-3 secs before reading data
+	//SysCtlDelay(15000000); // @ 50MHz each MCU cycle is 20ns
+
+
+	for(r2 = 0; r2 < 4; r2++){
+		for(r1 = 0; r1 < 4; r1++){
+			state[r1][r2] = photo[marker];
+			marker++;
+		}
+	}
+
+}
+
+
+
+
+
+
+
+
+//*****************************************************************************
+//
+// Key Generation
+//
+//****************************************************************************
+void generateKey(){
+	cipherKey[0][0] = 0x2B;
+	cipherKey[0][0] = 0x28;
+	cipherKey[0][0] = 0xAB;
+	cipherKey[0][0] = 0x09;
+	cipherKey[0][0] = 0x7E;
+	cipherKey[0][0] = 0xAE;
+	cipherKey[0][0] = 0xF7;
+	cipherKey[0][0] = 0xCF;
+	cipherKey[0][0] = 0x15;
+	cipherKey[0][0] = 0xD2;
+	cipherKey[0][0] = 0x15;
+	cipherKey[0][0] = 0x4F;
+	cipherKey[0][0] = 0x16;
+	cipherKey[0][0] = 0xA6;
+	cipherKey[0][0] = 0x88;
+	cipherKey[0][0] = 0x3C;
+
+}
+
+
+//*****************************************************************************
+//
+// Get S-Box Value
+//
+//****************************************************************************
+unsigned char getSBoxValue(unsigned char num)
+{
+	return sbox[num]; // returns corresponding value of the S-Box
+}
+
+
+//*****************************************************************************
+//
+// Substitute Bytes
+//
+//****************************************************************************
+void SubBytes()
+{
+	int m = 0;
+	for(m =0; m < 4; m++){
+		for(n=0; n < 4; n++){
+			state[n][m] = getSBoxValue(state[n][m]); // find value in table and replace
+		}
+	}
+}
+
+
+//*****************************************************************************
+//
+// Shift Rows
+//
+//*****************************************************************************
+void ShiftRows()
+{
+	for(p = 0; p < 4 ; p++){
+		x = p;
+		for(k =0; k < 4; k++){
+			tempBuffer[k][p] = state[k][x % 4]; // calculate position for each element
+			x++;
+		}
+	}
+
+	int a1;
+	int a2;
+	for(a1 = 0; a1 < 4; a1++)
+		for(a2 = 0; a2 < 4 ; a2++)
+			state[a2][a1] = tempBuffer[a2][a1]; // copy temp to state buffer
+}
+
+
+//*****************************************************************************
+//
+// Multiply by 2
+//
+//*****************************************************************************
+// Used in MixRows operation
+char MultBy2(char num1)
+{
+	char result1;
+
+	if((num1 & 0x80) == 0x80){
+		result1 = (num1 << 1) ^ 0x1b; // shift left and xor with 0x1b
+	}
+
+	else
+		result1 = (num1 << 1); // shift left 1 bit
+
+	return result1;
+}
+
+
+//*****************************************************************************
+//
+// Multiply by 3
+//
+//*****************************************************************************
+// Used in MixColumns operation
+char MultBy3(char num2)
+{
+	char result2;
+
+	if((num2 & 0x80) == 0x80){
+		// shift left 1 bit, xor with 0x1b and xor with original
+		result2 = ((num2 << 1) ^ 0x1b) ^ num2;
+	}
+
+	else
+		result2 = (num2 << 1) ^ num2 ; // shift left 1 bit
+
+	return result2;
+}
+
+
+//*****************************************************************************
+//
+// Mix Columns
+//
+//*****************************************************************************
+void MixColumns()
+{
+	// Each function was computed using the Rijndael Mix Columns where
+	// 1 means no change, 2 shift left, 3 shift left and xor with original
+	// if leftmost bit is 1 before shift xor with 0x1b too
+	// Matrix used: [2 3 1 1; 1 2 3 1; 1 1 2 3; 3 1 1 2]
+
+
+	for(i = 0; i < 4; i++)
+		for(j = 0; j < 4; j++){
+			if(i == 0)
+				tempBuffer[0][j] = (MultBy2(state[0][j]) ^ MultBy3(state[1][j]) ^ (state[2][j]) ^ (state[3][j]));
+			else if(i == 1)
+				tempBuffer[1][j] = ((state[0][j]) ^ MultBy2(state[1][j]) ^ MultBy3(state[2][j]) ^ (state[3][j]));
+			else if(i == 2)
+				tempBuffer[2][j] = ((state[0][j]) ^ (state[1][j]) ^ MultBy2(state[2][j]) ^ MultBy3(state[3][j]));
+			else if(i == 3)
+				tempBuffer[3][j] = (MultBy3(state[0][j]) ^ (state[1][j]) ^ (state[2][j]) ^ MultBy2(state[3][j]));
+		}
+
+	// Copy tempBuffer into state
+	int a3;
+	int a4;
+	for(a3 = 0; a3 < 4; a3++)
+		for(a4 = 0; a4 < 4 ; a4++)
+			state[a4][a3] = tempBuffer[a4][a3];
+
+}
+
+
+//*****************************************************************************
+//
+// Rotate Column in AddexpandedKey operation.
+//
+//*****************************************************************************
+void RotateColumn()
+{
+	//	volatile unsigned char temp;
+	int u;
+	for(u=0; u < 3; u++){
+		column[u][0] = expandedKey[u+1][index-1];
+	}
+
+	column[3][0] = expandedKey[0][index-1];
+}
+
+
+
+//*****************************************************************************
+//
+// Substitute Bytes in AddexpandedKey operation.
+//
+//*****************************************************************************
+void SubBytesARK()
+{
+	int v;
+	for(v=0; v < 4; v++){
+		column[v][0] = getSBoxValue(column[v][0]);
+	}
+}
+
+
+//*****************************************************************************
+//
+// Key Schedule Process
+//
+//*****************************************************************************
+void keySchedule() {
+
+	int i1;
+	int j1;
+	if(index % 4 == 0){
+		RotateColumn();
+		SubBytesARK();
+		for(i1 = 0; i1 < 4; i1++){
+			expandedKey[i1][index]= expandedKey[i1][index-4] ^ column[i1][0] ^ Rcon[i1][(index/4 - 1)];
+		}
+	}
+	else
+		for(j1 = 0; j1 < 4; j1++){
+			expandedKey[j1][index] = expandedKey[j1][index-1] ^ expandedKey[j1][index-4];
+		}
+	index++;
+}
+
+
+//*****************************************************************************
+//
+// Expand Key
+//
+//*****************************************************************************
+void expandKey()
+{
+
+	for(y = 0; y < 40; y++)
+		keySchedule();
+}
+
+//*****************************************************************************
+//
+// Add Round Key
+//
+//*****************************************************************************
+void AddRoundKey()
+{
+	int s, t;
+	int start = roundNumber*4;
+	for(s = start; s < (start+ 4); s++)
+		for(t = 0; t < 4 ; t++)
+			roundKey[t][s-roundNumber*4] = expandedKey[t][s];
+
+	roundNumber++;
+
+	// AddexpandedKey - bitwise xor state and round key
+	int n1;
+	int m1;
+	for(n1 = 0; n1 < 4; n1++)
+		for(m1 = 0; m1 < 4; m1++)
+		{
+			state[m1][n1] = state[m1][n1] ^ roundKey[m1][n1];
+		}
+}
+
+
+//*****************************************************************************
+//
+// Fill Round Constant Table
+//
+//*****************************************************************************
+void fillRoundConTable(){
+	Rcon[0][0] = 0x01;
+	Rcon[0][1] = 0x02;
+	Rcon[0][2] = 0x04;
+	Rcon[0][3] = 0x08;
+	Rcon[0][4] = 0x10;
+	Rcon[0][5] = 0x20;
+	Rcon[0][6] = 0x40;
+	Rcon[0][7] = 0x80;
+	Rcon[0][8] = 0x1B;
+	Rcon[0][9] = 0x36;
+}
+
+//*****************************************************************************
+//
+// Copy Key to the Expanded Key Buffer
+//
+//*****************************************************************************
+void copyKeyToExpandedKey(){
+	expandedKey[0][0] = 0x2B;
+	expandedKey[0][1] = 0x28;
+	expandedKey[0][2] = 0xAB;
+	expandedKey[0][3] = 0x09;
+	expandedKey[1][0] = 0x7E;
+	expandedKey[1][1] = 0xAE;
+	expandedKey[1][2] = 0xF7;
+	expandedKey[1][3] = 0xCF;
+	expandedKey[2][0] = 0x15;
+	expandedKey[2][1] = 0xD2;
+	expandedKey[2][2] = 0x15;
+	expandedKey[2][3] = 0x4F;
+	expandedKey[3][0] = 0x16;
+	expandedKey[3][1] = 0xA6;
+	expandedKey[3][2] = 0x88;
+	expandedKey[3][3] = 0x3C;
+}
+
+//WRITE COMMAND
+int WriteFile(char *file, char *data)
+{
+
+	unsigned short usBytesWrite;
+
+	//
+	// Open the file for create new text file.
+	//
+
+	if (f_open(&g_sFileObject, file, FA_CREATE_NEW | FA_WRITE)==FR_OK)
+	{
+		//
+		// write file
+		//
+		//if(f_write(&g_sFileObject,data,strlen(data),&usBytesWrite)==FR_OK)
+		if(f_write(&g_sFileObject,data,16,&usBytesWrite)==FR_OK)
+		{
+			UARTprintf("Write file success\n");
+			f_sync(&g_sFileObject);
+		}
+		else
+		{
+			UARTprintf("Write into file Error\n");
+		}
+	}
+	else
+	{
+		// if the file is exist
+		if (f_open(&g_sFileObject, file, FA_CREATE_NEW | FA_WRITE)==FR_EXIST)
+
+		{
+
+			if (f_open(&g_sFileObject, file, FA_OPEN_EXISTING | FA_WRITE)==FR_OK)
+			{
+				//
+				// write file
+				//
+				if(f_lseek(&g_sFileObject, g_sFileObject.fsize)==FR_OK)
+				{
+					if(f_write(&g_sFileObject,data,16,&usBytesWrite)==FR_OK)
+					{
+						//UARTprintf("File append success\n");
+						f_close(&g_sFileObject);
+					}
+					else
+					{
+						UARTprintf("Write into file Error\n");
+					}
+				}
+			}
+			else
+			{
+				UARTprintf("Append File ceation Error, file not found\n");
+			}
+
+		}
+		else
+			UARTprintf("New File ceation Error\n");
+	}
+
+	return(0);
+}
+//*****************************************************************************
+//
+// Encrypt Photo Blocks
+//
+//*****************************************************************************
+
+void encryptBlock(){
+
+	// Getting plaintext to be encrypted
+	getNextPhotoBlock();
+
+	// Encryption Process
+	AddRoundKey();
+
+	int t1;
+
+	for(t1 = 0; t1 < 9; t1++){
+		SubBytes();
+		ShiftRows();
+		MixColumns();
+		AddRoundKey();
+	}
+
+	SubBytes();
+	ShiftRows();
+	AddRoundKey();
+	//marker3= 0;
+
+	// replace original photo block with encrypted block
+	for(p2 = 0; p2 < 4; p2++){
+		for(p1 = 0; p1 < 4; p1++){
+			photo[marker2] = state[p1][p2];
+			//photo2[marker3] = state[p1][p2];
+			marker2++;
+			//marker3++;
+		}
+	}
+	//WriteFile("photo2.txt", (char *)photo);
+	roundNumber = 0;
+}
+
+
+
+//*****************************************************************************
+//
+// Encrypt Photo
+//
+//*****************************************************************************
+void encrypt(){
+	for(z = 0; z < count/16; z++)
+		encryptBlock();
+}
+
+
+const char *
+StringFromFresult(FRESULT fresult)
+{
+	unsigned int uIdx;
+
+	//
+	// Enter a loop to search the error code table for a matching
+	// error code.
+	//
+	for(uIdx = 0; uIdx < NUM_FRESULT_CODES; uIdx++)
+	{
+		//
+		// If a match is found, then return the string name of the
+		// error code.
+		//
+		if(g_sFresultStrings[uIdx].fresult == fresult)
+		{
+			return(g_sFresultStrings[uIdx].pcResultStr);
+		}
+	}
+
+	//
+	// At this point no matching code was found, so return a
+	// string indicating unknown error.
+	//
+	return("UNKNOWN ERROR CODE");
+}
+
+void getCoordinates()
+{
+
+	gt=seg/2;
+	while(gt--)
+	{}
+
+	//--------------Set RMC only output sentences
+	//UARTSend((unsigned long)UART3_BASE, (unsigned char *)"$PMTK314,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*29\r\n",53);
+	SysCtlDelay(15000000) ;
+	//Activate interrupt.
+	IntEnable(INT_UART3);
+	UARTIntEnable(UART3_BASE, UART_INT_RX | UART_INT_RT);
+
+	gt=seg/2;
+	while(gt--)
+	{}
+}
+//*****************************************************************************
+//
+// This is the handler for this SysTick interrupt.  FatFs requires a
+// timer tick every 10 ms for internal timing purposes.
+//
+//*****************************************************************************
+void
+SysTickHandler(void)
+{
+	//
+	// Call the FatFs tick timer.
+	//
+	disk_timerproc();
+}
+
+//*****************************************************************************
+//
+// This function implements the "ls" command.  It opens the current
+// directory and enumerates through the contents, and prints a line for
+// each item it finds.  It shows details such as file attributes, time and
+// date, and the file size, along with the name.  It shows a summary of
+// file sizes at the end along with free space.
+//
+//*****************************************************************************
+int
+Cmd_ls(int argc, char *argv[])
+{
+	unsigned long ulTotalSize;
+	unsigned long ulFileCount;
+	unsigned long ulDirCount;
+	FRESULT fresult;
+	FATFS *pFatFs;
+
+	//
+	// Open the current directory for access.
+	//
+	fresult = f_opendir(&g_sDirObject, g_cCwdBuf);
+
+	//
+	// Check for error and return if there is a problem.
+	//
+	if(fresult != FR_OK)
+	{
+		return(fresult);
+	}
+
+	ulTotalSize = 0;
+	ulFileCount = 0;
+	ulDirCount = 0;
+
+	//
+	// Give an extra blank line before the listing.
+	//
+	UARTprintf("\n");
+
+	//
+	// Enter loop to enumerate through all directory entries.
+	//
+	for(;;)
+	{
+		//
+		// Read an entry from the directory.
+		//
+		fresult = f_readdir(&g_sDirObject, &g_sFileInfo);
+
+		//
+		// Check for error and return if there is a problem.
+		//
+		if(fresult != FR_OK)
+		{
+			return(fresult);
+		}
+
+		//
+		// If the file name is blank, then this is the end of the
+		// listing.
+		//
+		if(!g_sFileInfo.fname[0])
+		{
+			break;
+		}
+
+		//
+		// If the attribue is directory, then increment the directory count.
+		//
+		if(g_sFileInfo.fattrib & AM_DIR)
+		{
+			ulDirCount++;
+		}
+
+		//
+		// Otherwise, it is a file.  Increment the file count, and
+		// add in the file size to the total.
+		//
+		else
+		{
+			ulFileCount++;
+			ulTotalSize += g_sFileInfo.fsize;
+		}
+
+		//
+		// Print the entry information on a single line with formatting
+		// to show the attributes, date, time, size, and name.
+		//
+		UARTprintf("%c%c%c%c%c %u/%02u/%02u %02u:%02u %9u  %s\n",
+				(g_sFileInfo.fattrib & AM_DIR) ? 'D' : '-',
+						(g_sFileInfo.fattrib & AM_RDO) ? 'R' : '-',
+								(g_sFileInfo.fattrib & AM_HID) ? 'H' : '-',
+										(g_sFileInfo.fattrib & AM_SYS) ? 'S' : '-',
+												(g_sFileInfo.fattrib & AM_ARC) ? 'A' : '-',
+														(g_sFileInfo.fdate >> 9) + 1980,
+														(g_sFileInfo.fdate >> 5) & 15,
+														g_sFileInfo.fdate & 31,
+														(g_sFileInfo.ftime >> 11),
+														(g_sFileInfo.ftime >> 5) & 63,
+														g_sFileInfo.fsize,
+														g_sFileInfo.fname);
+	}   // endfor
+
+	//
+	// Print summary lines showing the file, dir, and size totals.
+	//
+	UARTprintf("\n%4u File(s),%10u bytes total\n%4u Dir(s)",
+			ulFileCount, ulTotalSize, ulDirCount);
+
+	//
+	// Get the free space.
+	//
+	fresult = f_getfree("/", &ulTotalSize, &pFatFs);
+
+	//
+	// Check for error and return if there is a problem.
+	//
+	if(fresult != FR_OK)
+	{
+		return(fresult);
+	}
+
+	//
+	// Display the amount of free space that was calculated.
+	//
+	//UARTprintf(", %10uK bytes free\n", ulTotalSize * pFatFs->sects_clust / 2);
+
+	//
+	// Made it to here, return with no errors.
+	//
+	return(0);
+}
+
+//*****************************************************************************
+//
+// This function implements the "cd" command.  It takes an argument
+// that specifes the directory to make the current working directory.
+// Path separators must use a forward slash "/".  The argument to cd
+// can be one of the following:
+// * root ("/")
+// * a fully specified path ("/my/path/to/mydir")
+// * a single directory name that is in the current directory ("mydir")
+// * parent directory ("..")
+//
+// It does not understand relative paths, so dont try something like this:
+// ("../my/new/path")
+//
+// Once the new directory is specified, it attempts to open the directory
+// to make sure it exists.  If the new path is opened successfully, then
+// the current working directory (cwd) is changed to the new path.
+//
+//*****************************************************************************
+int
+Cmd_cd(int argc, char *argv[])
+{
+	unsigned int uIdx;
+	FRESULT fresult;
+
+	//
+	// Copy the current working path into a temporary buffer so
+	// it can be manipulated.
+	//
+	strcpy(g_cTmpBuf, g_cCwdBuf);
+
+	//
+	// If the first character is /, then this is a fully specified
+	// path, and it should just be used as-is.
+	//
+	if(argv[1][0] == '/')
+	{
+		//
+		// Make sure the new path is not bigger than the cwd buffer.
+		//
+		if(strlen(argv[1]) + 1 > sizeof(g_cCwdBuf))
+		{
+			UARTprintf("Resulting path name is too long\n");
+			return(0);
+		}
+
+		//
+		// If the new path name (in argv[1])  is not too long, then
+		// copy it into the temporary buffer so it can be checked.
+		//
+		else
+		{
+			strncpy(g_cTmpBuf, argv[1], sizeof(g_cTmpBuf));
+		}
+	}
+
+	//
+	// If the argument is .. then attempt to remove the lowest level
+	// on the CWD.
+	//
+	else if(!strcmp(argv[1], ".."))
+	{
+		//
+		// Get the index to the last character in the current path.
+		//
+		uIdx = strlen(g_cTmpBuf) - 1;
+
+		//
+		// Back up from the end of the path name until a separator (/)
+		// is found, or until we bump up to the start of the path.
+		//
+		while((g_cTmpBuf[uIdx] != '/') && (uIdx > 1))
+		{
+			//
+			// Back up one character.
+			//
+			uIdx--;
+		}
+
+		//
+		// Now we are either at the lowest level separator in the
+		// current path, or at the beginning of the string (root).
+		// So set the new end of string here, effectively removing
+		// that last part of the path.
+		//
+		g_cTmpBuf[uIdx] = 0;
+	}
+
+	//
+	// Otherwise this is just a normal path name from the current
+	// directory, and it needs to be appended to the current path.
+	//
+	else
+	{
+		//
+		// Test to make sure that when the new additional path is
+		// added on to the current path, there is room in the buffer
+		// for the full new path.  It needs to include a new separator,
+		// and a trailing null character.
+		//
+		if(strlen(g_cTmpBuf) + strlen(argv[1]) + 1 + 1 > sizeof(g_cCwdBuf))
+		{
+			UARTprintf("Resulting path name is too long\n");
+			return(0);
+		}
+
+		//
+		// The new path is okay, so add the separator and then append
+		// the new directory to the path.
+		//
+		else
+		{
+			//
+			// If not already at the root level, then append a /
+			//
+			if(strcmp(g_cTmpBuf, "/"))
+			{
+				strcat(g_cTmpBuf, "/");
+			}
+
+			//
+			// Append the new directory to the path.
+			//
+			strcat(g_cTmpBuf, argv[1]);
+		}
+	}
+
+	//
+	// At this point, a candidate new directory path is in chTmpBuf.
+	// Try to open it to make sure it is valid.
+	//
+	fresult = f_opendir(&g_sDirObject, g_cTmpBuf);
+
+	//
+	// If it cant be opened, then it is a bad path.  Inform
+	// user and return.
+	//
+	if(fresult != FR_OK)
+	{
+		UARTprintf("cd: %s\n", g_cTmpBuf);
+		return(fresult);
+	}
+
+	//
+	// Otherwise, it is a valid new path, so copy it into the CWD.
+	//
+	else
+	{
+		strncpy(g_cCwdBuf, g_cTmpBuf, sizeof(g_cCwdBuf));
+	}
+
+	//
+	// Return success.
+	//
+	return(0);
+}
+
+//*****************************************************************************
+//
+// This function implements the "pwd" command.  It simply prints the
+// current working directory.
+//
+//*****************************************************************************
+int
+Cmd_pwd(int argc, char *argv[])
+{
+	//
+	// Print the CWD to the console.
+	//
+	UARTprintf("%s\n", g_cCwdBuf);
+
+	//
+	// Return success.
+	//
+	return(0);
+}
+//*************
+// Sensor COMMAND
+//***************
+int
+Cmd_sensorSim(int argc, char *argv[])
+{
+	IntEnable(INT_GPIOE);
+	SysCtlSleep();
+	SysCtlDelay(25000000);
+//	//After this delay the next lines are to activate the interrupt and
+//	//send the microcontroller to sleep.
+	//GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
+	return(0);
+}
+//*************
+// GPS COMMAND
+//***************
+void gpsSim()
+{
+	ResetVariables();
+		SysCtlDelay(15000000);
+		getCoordinates();
+		SysCtlDelay(15000000);
+		strncpy(photo, coordinates,coordinatesSize);
+		count=coordinatesSize;
+		SysCtlDelay(15000000);
+		UARTprintf("Done with gps\n");
+		// Zero Padding photo
+		zeroPadding();
+
+		// Key
+		generateKey();
+
+		// Putting key in the expanded key buffer
+		copyKeyToExpandedKey();
+
+		// Fill round constant (Rcon) Table
+		fillRoundConTable();
+
+		// Call to expanded key function
+		expandKey();
+
+		// Encryption
+		encrypt();
+		UARTprintf("Done encrypting gps\n");
+
+		while (marker3<count)
+		{
+			for (o=0; o<16; o++)
+			{ photo2[o]=photo[marker3];
+			marker3++;
+			}
+
+			WriteFile("gps22.txt",(char *) photo2);
+		}
+
+}
+//*****************************************************************************
+//
+// The GPIO interrupt handler.
+//
+//*****************************************************************************
+void gpioEHandler(void)
+{
+	//Activate sensor flag
+	sensorFlag=1;
+	// Clear the timer interrupt
+	IntDisable(INT_GPIOE);
+	GPIOPinIntClear(GPIO_PORTE_BASE,GPIO_PIN_3);
+	//TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
+	// Read the current state of the GPIO pin and
+	// write back the opposite state
+
+	GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 4);
+	gpsSim();
+	//	UARTSend((unsigned long)UART0_BASE, photo, sizeof(photo));
+	GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
+
+
+
+}
+int
+Cmd_gpsSim(int argc, char *argv[])
+{
+	ResetVariables();
+	SysCtlDelay(15000000);
+	getCoordinates();
+	SysCtlDelay(15000000);
+
+	strncpy(photo, coordinates,coordinatesSize);
+	count=coordinatesSize;
+	SysCtlDelay(15000000);
+	UARTprintf("Done with gps\n");
+	// Zero Padding photo
+	zeroPadding();
+
+	// Key
+	generateKey();
+
+	// Putting key in the expanded key buffer
+	copyKeyToExpandedKey();
+
+	// Fill round constant (Rcon) Table
+	fillRoundConTable();
+
+	// Call to expanded key function
+	expandKey();
+
+	// Encryption
+	encrypt();
+	UARTprintf("Done encrypting gps\n");
+
+	while (marker3<count)
+	{
+		for (o=0; o<16; o++)
+		{ photo2[o]=photo[marker3];
+		marker3++;
+		}
+
+		WriteFile("gps11.txt",(char *) photo2);
+	}
+
+
+	return (0);
+}
+//*************
+// Camera COMMAND
+//***************
+int
+Cmd_photoSim(int argc, char *argv[])
+{
+	for (w = 0 ; w<3; w++)
+	{
+
+		ResetVariables();
+
+		// Camera
+		resetCamera();
+		takePhoto();
+		//readPhotoLength();
+		readPhoto();
+
+		SysCtlDelay(50000000); // @ 50MHz each MCU cycle is 20ns
+		UARTprintf("Done with photo\n");
+		// Zero Padding photo
+		zeroPadding();
+
+		// Key
+		generateKey();
+
+		// Putting key in the expanded key buffer
+		copyKeyToExpandedKey();
+
+		// Fill round constant (Rcon) Table
+		fillRoundConTable();
+
+		// Call to expanded key function
+		expandKey();
+
+		// Encryption
+		encrypt();
+		SysCtlDelay(15000000);
+
+		while (marker3<count)
+		{
+			for (o=0; o<16; o++)
+			{ photo2[o]=photo[marker3];
+			marker3++;
+			}
+
+			if(w==0)
+			{
+				WriteFile("photo11.txt",(char *) photo2);
+			}
+			else if(w==1)
+			{
+				WriteFile("photo22.txt",(char *) photo2);
+			}
+			else if(w==2)
+			{
+				WriteFile("photo33.txt",(char *) photo2);
+			}
+		}
+		//WriteFile("photo2.txt", photo);
+		//	encryptBlock();
+		UARTprintf("Done encrypting\n");
+		//WriteFile("photo.txt", photo);
+	}
+	return(0);
+}
+
+
+//*****************************************************************************
+//
+// This function implements the "cat" command.  It reads the contents of
+// a file and prints it to the console.  This should only be used on
+// text files.  If it is used on a binary file, then a bunch of garbage
+// is likely to printed on the console.
+//
+//*****************************************************************************
+int
+Cmd_read(int argc, char *argv[])
+{
+	FRESULT fresult;
+	unsigned short usBytesRead;
+
+	//
+	// First, check to make sure that the current path (CWD), plus
+	// the file name, plus a separator and trailing null, will all
+	// fit in the temporary buffer that will be used to hold the
+	// file name.  The file name must be fully specified, with path,
+	// to FatFs.
+	//
+	if(strlen(g_cCwdBuf) + strlen(argv[1]) + 1 + 1 > sizeof(g_cTmpBuf))
+	{
+		UARTprintf("Resulting path name is too long\n");
+		return(0);
+	}
+
+	//
+	// Copy the current path to the temporary buffer so it can be manipulated.
+	//
+	strcpy(g_cTmpBuf, g_cCwdBuf);
+
+	//
+	// If not already at the root level, then append a separator.
+	//
+	if(strcmp("/", g_cCwdBuf))
+	{
+		strcat(g_cTmpBuf, "/");
+	}
+
+	//
+	// Now finally, append the file name to result in a fully specified file.
+	//
+	strcat(g_cTmpBuf, argv[1]);
+
+
+	//
+	// Open the file for reading.
+	//
+	fresult = f_open(&g_sFileObject, g_cTmpBuf, FA_READ);
+
+	//
+	// If there was some problem opening the file, then return
+	// an error.
+	//
+	if(fresult != FR_OK)
+	{
+		return(fresult);
+	}
+
+	//
+	// Enter a loop to repeatedly read data from the file and display it,
+	// until the end of the file is reached.
+	//
+	do
+	{
+		//
+		// Read a block of data from the file.  Read as much as can fit
+		// in the temporary buffer, including a space for the trailing null.
+		//
+		fresult = f_read(&g_sFileObject, g_cTmpBuf, sizeof(g_cTmpBuf) - 1,
+				&usBytesRead);
+
+		//
+		// If there was an error reading, then print a newline and
+		// return the error to the user.
+		//
+		if(fresult != FR_OK)
+		{
+			UARTprintf("\n");
+			return(fresult);
+		}
+
+		//
+		// Null terminate the last block that was read to make it a
+		// null terminated string that can be used with printf.
+		//
+		g_cTmpBuf[usBytesRead] = 0;
+
+		//
+		// Print the last chunk of the file that was received.
+		//
+		UARTprintf("%s", g_cTmpBuf);
+
+		//
+		// Continue reading until less than the full number of bytes are
+		// read.  That means the end of the buffer was reached.
+		//
+	}
+	while(usBytesRead == sizeof(g_cTmpBuf) - 1);
+
+	//
+	// Return success.
+	//
+	return(0);
+}
+
+//*****************************************************************************
+//
+// This function implements the "help" command.  It prints a simple list
+// of the available commands with a brief description.
+//
+//*****************************************************************************
+int
+Cmd_help(int argc, char *argv[])
+{
+	tCmdLineEntry *pEntry;
+
+	//
+	// Print some header text.
+	//
+	UARTprintf("\nCarSpy MicroSD Testing Commands\n");
+	UARTprintf("---------------------------------\n");
+
+	//
+	// Point at the beginning of the command table.
+	//
+	pEntry = &g_sCmdTable[0];
+
+	//
+	// Enter a loop to read each entry from the command table.  The
+	// end of the table has been reached when the command name is NULL.
+	//
+	while(pEntry->pcCmd)
+	{
+		//
+		// Print the command name and the brief description.
+		//
+		UARTprintf("%s%s\n", pEntry->pcCmd, pEntry->pcHelp);
+
+		//
+		// Advance to the next entry in the table.
+		//
+		pEntry++;
+	}
+
+	//
+	// Return success.
+	//
+	return(0);
+}
+
+//*****************************************************************************
+//
+// This function implements the "write" command.  It uses the Writefile function to
+// write the photo and the coordinates file into the MicroSD Card.
+//
+//*****************************************************************************
+int Cmd_writePhoto(int argc, char *argv[])
+{
+	//Example of writing a photo into the MicroSD Card
+	//This function will be used when the photo is received
+	//For each photo the function will be called with the appropriated
+	//file name to be created and the array containing the photo.
+	//Example:	WriteFile( photo1.txt, photoArray1)
+	//			WriteFile( photo2.txt, photoArray2)
+
+	strcpy(g_cTmpBuf, g_cCwdBuf);
+	if(strcmp(g_cTmpBuf, "/"))
+	{
+		strcat(g_cTmpBuf, "/");
+	}
+
+	strcat(g_cTmpBuf, "photo.txt");
+	WriteFile(g_cTmpBuf,photo);
+	//WriteFile("photo5.txt",GPSCoordinate2);
+
+
+	return(0);
+
+
+}
+int Cmd_writeGPS(int argc, char *argv[])
+{
+	//WriteFile("photo5.txt",GPSCoordinate2);
+	//Example of writing a GPS coordinate in the MicroSD Card
+	//When the GPS Module finishes capturing the coordinate this function will be used.
+	//First parameter is the coordinate file name and the second is the array with the values.
+	//ITS WORKING!!!
+	strcpy(g_cTmpBuf, g_cCwdBuf);
+	if(strcmp(g_cTmpBuf, "/"))
+	{
+		strcat(g_cTmpBuf, "/");
+	}
+
+	strcat(g_cTmpBuf, "coord.txt");
+	WriteFile(g_cTmpBuf,GPSCoordinate);
+
+	return(0);
+
+}
+//*****************************************************************************
+//
+// This function implements the "delete" command.  It uses the fat32 function to
+// to delete using the path wanted to be deleted. This function works for directories and files.
+//
+//*****************************************************************************
+
+int Cmd_delete(int argc, char *argv[])
+{	FRESULT fresult;
+strcpy(g_cTmpBuf, g_cCwdBuf);
+if(strcmp(g_cTmpBuf, "/"))
+{
+	strcat(g_cTmpBuf, "/");
+}
+
+strcat(g_cTmpBuf, argv[1]);
+fresult= f_unlink(g_cTmpBuf);
+//fresult= f_unlink("coord.txt");
+
+if(fresult != FR_OK)
+{
+	UARTprintf("Error deleting file");
+
+}
+else
+{
+	UARTprintf("File Successfully Deleted");
+}
+return(0);
+
+
+}
+
+
+
+int Cmd_size(int argc, char *argv[])
+{
+	checkSize();
+	return (0);
+}
+
+
+int checkSize()
+{
+	unsigned long ulTotalSize;
+
+	FRESULT fresult;
+	FATFS *pFatFs;
+	//
+	// Get the free space.
+	//
+
+	fresult = f_getfree("/", &ulTotalSize, &pFatFs);
+	UARTprintf("Space Available: %10uK bytes free\n", ulTotalSize * pFatFs->sects_clust / 2);
+	ulTotalSize=ulTotalSize * pFatFs->sects_clust / 2;
+	//
+	// Check for error and return if there is a problem.
+	//
+	return (0);
+
+}
+int Cmd_createDir(int argc, char *argv[])
+{
+	FRESULT fresult;
+	/*strcpy(g_cTmpBuf, g_cCwdBuf);
+	if(strcmp(g_cTmpBuf, "/"))
+	{
+		strcat(g_cTmpBuf, "/");
+	}
+
+	strcat(g_cTmpBuf, "/");
+	strcat(g_cTmpBuf, );
+	 */
+
+	fresult=f_mkdir(argv[1]);
+	if(fresult != FR_OK)
+	{
+		UARTprintf("Error creating directory");
+
+	}
+	else
+	{
+		UARTprintf("Directory Successfully Created");
+	}
+	return(0);
+}
+
+/*
+int Cmd_simulation(int argc, char *argv[])
+{
+	FRESULT fresult;
+	char g_cTmpBufOrigin[PATH_BUF_SIZE];
+	char g_cTmpBufFinal[PATH_BUF_SIZE];
+	if (sessionFlag==0)
+	{
+		sessionFlag=1;
+		newDirectoryFlag=1;
+		sessionItem=0;
+	}
+
+
+	long availability2=checkSize();
+
+
+	//Read "Origin Session file" to get origin session directory name
+	CmdLineProcess(readOrigin);
+	//Save Origin Session directory name
+
+	memcpy(g_cTmpBufOrigin, g_cTmpBuf, PATH_BUF_SIZE);
+	UARTprintf("%s", g_cTmpBufOrigin);
+	//Read "Final Session file" to get final session directory name
+	CmdLineProcess(readFinal);
+	//Save Final Session file directory
+	memcpy(g_cTmpBufFinal, g_cTmpBuf, PATH_BUF_SIZE);
+	UARTprintf("%s", g_cTmpBufFinal);
+	//size available must be more than 40KB
+	//if not then the oldest file (origin) must be deleted
+	while (availability2<=40)
+
+	{   //Delete Origin Session Directory to create space
+		Cmd_delete(g_cTmpBufOrigin);
+		//TODO in integration modify origin file (parse get the integer and add 1)
+		//memcpy(readOrigin[CMD_BUF_SIZE], readOrigin[CMD_BUF_SIZE]+1, PATH_BUF_SIZE); //
+		//delete origin txt and write a new origin.txt with the updated value (this example is session2)
+		Cmd_delete("origin.txt");
+		WriteFile("origin.txt","session2");
+		//Check again if more space is needed.
+		availability2=checkSize();
+
+	}
+	//I need to create now the new file or session if needed
+	if(newDirectoryFlag==1)
+	{
+		newDirectoryFlag==0;
+		//TODO modify final file (parse get the integer and add 1)
+		//memcpy(readFinal[CMD_BUF_SIZE], readFinal[CMD_BUF_SIZE]+1, PATH_BUF_SIZE); //
+		//This parameter will be changed with the new origin file
+		//EXample the session final before was 9 now is 10
+		Cmd_delete("finalS.txt");
+		WriteFile("finalS.txt","session10");
+		//Now the directory will be created using that new value
+		fresult=f_mkdir ("session10");
+	}
+	//Go to directory of the g_cTmpBufFinal
+	WriteFile("gps.txt","GPSCoordinate");
+	sessionItem++;
+
+
+	if (sessionItem==4)
+	{
+		sessionFlag=0;
+		//	ReadGPS&Photofiles // keep them for later transmission
+		//	Activate Transmission flag
+	}
+
+	//		if (transmissionFlag==1)
+	//	{Send files to GSM Module}
+
+
+	return(0);
+
+
+}
+ */
+//*****************************************************************************
+//
+// This is the table that holds the command names, implementing functions,
+// and brief description.
+//
+//*****************************************************************************
+tCmdLineEntry g_sCmdTable[] =
+{
+		{ "help",   Cmd_help,      " : Display list of commands" },
+		{ "size",     Cmd_size,      "   : Display size Available" },
+		{ "list",     Cmd_ls,      "   : Display list of files" },
+		{ "changeDir",     Cmd_cd,      "   : Change directory" },
+		{ "showDir",    Cmd_pwd,      "  : Show current working directory" },
+		{ "read",    Cmd_read,      "  : Read contents of a text file" },
+		{ "writeGPS",     Cmd_writeGPS,   "  : Write a Photo & GPS file"},
+		{ "delete",     Cmd_delete,   "  : Delete a file"},
+		{ "writePhoto",     Cmd_writePhoto,   "  : Write a Photo & GPS file"},
+		{ "createDir",     Cmd_createDir,   "  : Create a Directory"},
+		{ "photoSim",     Cmd_photoSim,   "  : Takes photo and encrypts it"},
+		{ "gps",     Cmd_gpsSim,   "  : Takes, encrypt and saves GPS coordinates"},
+		{ "sensor",     Cmd_sensorSim,   "  : Activate magnetic sensor"},
+
+		//{ "simulation",     Cmd_simulation,   "  : Simulate CarSpy function"},
+
+		{ 0, 0, 0 }
+};
+//*****************************************************************************
+//
+// This function implements the "help" command.  It prints a simple list
+// of the available commands with a brief description.
+//
+//*****************************************************************************
+
+
+//*****************************************************************************
+//
+// The error routine that is called if the driver library encounters an error.
+//
+//*****************************************************************************
+#ifdef DEBUG
+void
+__error__(char *pcFilename, unsigned long ulLine)
+{
+}
+#endif
+
+//*****************************************************************************
+//
+// The program main function.  It performs initialization, then runs
+// a command processing loop to read commands from the console.
+//
+//*****************************************************************************
+int
+main(void)
+{  //-----Inizialization of GPS variables
+
+	proof1[0]='$';
+	proof1[1]='G';
+	proof1[2]='P';
+	proof1[3]='R';
+
+	//-----------------
+
+	int nStatus;
+	FRESULT fresult;
+
+	//Data to be written
+
+	//
+	// Set the system clock to run at ?? from the main oscillator.
+	//
+	SysCtlClockSet(SYSCTL_SYSDIV_4 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
+
+	//
+	// Enable the peripherals for microSD.
+	//
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART0);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_SSI0);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
+
+	// Enable the peripherals for Sensor
+
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
+
+	// Configuring UART ports for camera
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART1);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
+	// Configuring UART ports for GPS
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART3);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOC);
+
+	// Configure the GPIO pin muxing for the UART function.
+	GPIOPinConfigure(0x00000001);//GPIO_PA0_U0RX
+	GPIOPinConfigure(0x00000401);//GPIO_PA1_U0TX
+
+	//Configure the GPIO pin muxing for Camera
+	GPIOPinConfigure(0x00010001);//GPIO_PB0_U0RX
+	GPIOPinConfigure(0x00010401);//GPIO_PB1_U0TX
+
+	//Configure the GPIO pin muxing for GPS
+	GPIOPinConfigure(0x00021801);//GPIO_PC6_U3RX
+	GPIOPinConfigure(0x00021C01);//GPIO_PC7_U3TX
+
+
+	// Configure the UART for Camera for 38,400, 8-N-1 operation.
+	UARTConfigSetExpClk(UART1_BASE, SysCtlClockGet(), 38400,
+			(UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
+					UART_CONFIG_PAR_NONE));
+	// Configure the UART for GPS for 9,600, 8-N-1 operation.
+	UARTConfigSetExpClk(UART3_BASE, SysCtlClockGet(), 9600,
+			(UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
+					UART_CONFIG_PAR_NONE));
+	//Specify type for gpio's
+	GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3);
+	GPIOPinTypeGPIOInput(GPIO_PORTE_BASE,GPIO_PIN_3);
+	//Specify peripherals ON when sleep mode is activated
+	SysCtlPeripheralClockGating(1);
+	SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_GPIOE|SYSCTL_PERIPH_GPIOF);
+	// Configure SysTick for a 100Hz interrupt.  The FatFs driver
+	// wants a 10 ms tick.
+	//
+	SysTickPeriodSet(SysCtlClockGet() / 100);
+	SysTickEnable();
+	SysTickIntEnable();
+
+	// Enable interrupt
+	IntEnable(INT_UART1);
+	UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT);
+
+	// Declare interrupt for the GPIO in A7 detecting a HIGH from sensor
+	GPIOPinIntClear(GPIO_PORTE_BASE,GPIO_PIN_3);
+	GPIOIntTypeSet(GPIO_PORTE_BASE, GPIO_PIN_3, GPIO_HIGH_LEVEL);
+	GPIOPinIntEnable(GPIO_PORTE_BASE, GPIO_PIN_3);
+	//
+	// Enable Interrupts
+	//
+	IntMasterEnable();
+
+	//
+	// Set GPIO A0 and A1 as UART.
+	//
+	GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
+	//UART used for camera
+	GPIOPinTypeUART(GPIO_PORTB_BASE, GPIO_PIN_0 | GPIO_PIN_1);
+
+	//UART used for gps
+	GPIOPinTypeUART(GPIO_PORTC_BASE, GPIO_PIN_6 | GPIO_PIN_7);
+	//
+	// Initialize the UART as a console for text I/O.
+	//
+	UARTStdioInitExpClk(0,9600);
+	//UARTStdioInit(0);
+
+	//
+	// Print hello message to user.
+	//
+	UARTprintf("\n\nCarSpy MicroSD Card Test\n");
+	UARTprintf("Type \'help\' for help.\n");
+
+	//
+	// Mount the file system, using logical disk 0.
+	//
+	fresult = f_mount(0, &g_sFatFs);
+	if(fresult != FR_OK)
+	{
+		UARTprintf("f_mount error: %s\n", StringFromFresult(fresult));
+		return(1);
+	}
+
+	//
+	// Enter an infinite loop for reading and processing commands from the
+	// user.
+	//
+	IntEnable(INT_GPIOE);
+	SysCtlSleep();
+	while(1)
+	{
+		//
+		// Print a prompt to the console.  Show the CWD.
+		//
+		//UARTprintf("\n%s> ", g_cCwdBuf);
+		//delay of 6 seconds
+//		SysCtlDelay(75000000);
+//		IntEnable(INT_GPIOE);
+
+//if(sensorFlag==1)
+//{	sensorFlag=0;
+//	gpsSim();
+////	UARTSend((unsigned long)UART0_BASE, photo, sizeof(photo));
+//	GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
+//	SysCtlDelay(75000000);
+//	IntEnable(INT_GPIOE);
+//}
+		//After this delay the next lines are to activate the interrupt and
+		//send the microcontroller to sleep.
+		//GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
+		//IntEnable(INT_GPIOE);
+		//
+		// Get a line of text from the user.
+		//
+		UARTgets(g_cCmdBuf, sizeof(g_cCmdBuf));
+		//GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
+		//
+		// Pass the line from the user to the command processor.
+		// It will be parsed and valid commands executed.
+		//
+		nStatus = CmdLineProcess(g_cCmdBuf);
+		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
+		IntEnable(INT_GPIOE);
+		//
+		// Handle the case of bad command.
+		//
+		if(nStatus == CMDLINE_BAD_CMD)
+		{
+			UARTprintf("Bad command!\n");
+		}
+
+		//
+		// Handle the case of too many arguments.
+		//
+		else if(nStatus == CMDLINE_TOO_MANY_ARGS)
+		{
+			UARTprintf("Too many arguments for command processor!\n");
+		}
+
+		//
+		// Otherwise the command was executed.  Print the error
+		// code if one was returned.
+		//
+		else if(nStatus != 0)
+		{
+			UARTprintf("Command returned error code %s\n",
+					StringFromFresult((FRESULT)nStatus));
+		}
+	}
+
+}
