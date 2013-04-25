@@ -20,8 +20,8 @@
 #include "stdint.h"
 
 #define Camera		UART1_BASE
-#define GSM 		UART3_BASE
-#define GPS			UART4_BASE
+#define GSM 		UART4_BASE
+//#define GPS			UART4_BASE
 
 #define packetSize		1024
 extern void UARTSend(unsigned long ulBase, const unsigned char *pucBuffer, unsigned long ulCount);
@@ -96,11 +96,6 @@ SendData(const unsigned char *pucBuffer)
 	//Data size seria el tamaño de la toda la info guardada en el SD card?
 
 	char subBuff[packetSize];
-	int dataSize = strlen((const char*)pucBuffer);
-
-	// Checking if data is divisible by 128 bits (16 bytes)
-	if(dataSize % packetSize != 0)
-		dataSize = dataSize + (packetSize - (dataSize % packetSize)); // zero padding
 
 	int s;
 	for(s = 0; (s*packetSize) <= 13500; s++)

@@ -16,8 +16,8 @@
 #include "gsm.h"
 
 #define Camera		UART1_BASE
-#define GSM 		UART3_BASE
-#define GPS			UART4_BASE
+#define GSM 		UART4_BASE
+//#define GPS			UART4_BASE
 
 #define DeviceIdentifier		1
 #define testSize		13500
@@ -49,7 +49,7 @@ UARTReceive(unsigned long ulBase, volatile char pucBuffer[])
 }
 
 void
-UART3IntHandler(void)
+UART4IntHandler(void)
 {
 	unsigned long ulStatus;
 	//tBoolean bRc;
@@ -75,7 +75,7 @@ UARTSetup()
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART0);//Terminal UART
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
 
-	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART3);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART4);
 	//	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART4);
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOC);
 
@@ -86,18 +86,20 @@ UARTSetup()
 	GPIOPinConfigure(0x00000401);//GPIO_PA1_U0TX
 	//	GPIOPinConfigure(0x00010001);//GPIO_PB0_U0RX
 	//	GPIOPinConfigure(0x00010401);//GPIO_PB1_U0TX
-	GPIOPinConfigure(0x00021801);//GPIO_PC6_U3RX
-	GPIOPinConfigure(0x00021C01);//GPIO_PC7_U3TX
-	//	GPIOPinConfigure(0x00021001);//GPIO_PC4_U4RX
-	//	GPIOPinConfigure(0x00021401);//GPIO_PC5_U4TX
+//	GPIOPinConfigure(0x00021801);//GPIO_PC6_U3RX
+//	GPIOPinConfigure(0x00021C01);//GPIO_PC7_U3TX
+	GPIOPinConfigure(0x00021001);//GPIO_PC4_U4RX
+	GPIOPinConfigure(0x00021401);//GPIO_PC5_U4TX
+
+
 
 
 	// Configure the GPIOs (ex. A0, A1) that are used for the UART function, they must be
 	// configured for use as a peripheral function (instead of GPIO).
 	GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
 	//	GPIOPinTypeUART(GPIO_PORTB_BASE, GPIO_PIN_0 | GPIO_PIN_1);
-	GPIOPinTypeUART(GPIO_PORTC_BASE, GPIO_PIN_6 | GPIO_PIN_7);
-	//	GPIOPinTypeUART(GPIO_PORTC_BASE, GPIO_PIN_5 | GPIO_PIN_4);
+//	GPIOPinTypeUART(GPIO_PORTC_BASE, GPIO_PIN_6 | GPIO_PIN_7);
+		GPIOPinTypeUART(GPIO_PORTC_BASE, GPIO_PIN_5 | GPIO_PIN_4);
 
 	// Configure the UART for 115,200, 8-N-1 operation.
 	UARTConfigSetExpClk(UART0_BASE, SysCtlClockGet(), 115200,
@@ -144,8 +146,8 @@ int main(void)
 	UARTSetup();
 	// Enable processor interrupts
 	IntMasterEnable();
-	IntEnable(INT_UART3);
-	UARTIntEnable(UART3_BASE, UART_INT_RX | UART_INT_RT);
+	IntEnable(INT_UART4);
+	UARTIntEnable(GSM, UART_INT_RX | UART_INT_RT);
 
 	// Put a character to show start of example. This will display on the terminal.
 	UARTCharPut(UART0_BASE, '!');
@@ -153,6 +155,8 @@ int main(void)
 	//Verify GSM is connected to carrier.
 	//	SysCtlDelay(25000000); Removed delay.
 
+	//char* id = "";
+	//itoa(DeviceIdentifier,id);
 
 	int s;
 	int c = 49;
@@ -161,8 +165,6 @@ int main(void)
 
 		if (s%240 == 0)
 			c++;
-
-
 
 	}
 	//		"AT#SCFG=1,1,1500,90,600,50\r\n"
