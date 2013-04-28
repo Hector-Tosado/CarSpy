@@ -14,11 +14,12 @@
 #include "stdlib.h"
 // Camera
 #include "inc/hw_memmap.h"
-
+#include "gsm.h"
 #include "inc/hw_ints.h"
 
 #include "driverlib/uart.h"
 
+#define GSM 		UART4_BASE
 //*****************************************************************************
 //
 //! \addtogroup example_list
@@ -188,6 +189,7 @@ volatile int count = 0;
 unsigned char command[16];
 
 
+
 volatile int sizeBuffer[5];
 volatile char sizeGPS[2];
 volatile char sizePHOTO[5];
@@ -209,6 +211,7 @@ volatile int roundNumber = 0;
 volatile int marker = 0;
 volatile int marker2 = 0;
 volatile int marker3 = 0;
+volatile int marker4 = 0;
 int r1, r2 = 0;
 int p1, p2 = 0;
 int z = 0;
@@ -260,6 +263,54 @@ unsigned char sbox[256] =
 		0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16
 };
 
+
+#define DeviceIdentifier		1
+#define testSize		13500
+volatile char GSMresponse[1000];
+
+int respSize = 0;
+
+
+volatile long int b=1000000;
+volatile long int sec=1000000;
+
+int sFlag = 0; //Send Flag
+int rFlag = 0; //Receive Flag
+int ce = 0;
+int gsm = 0;
+
+char cChar;
+void
+UARTReceive3(unsigned long ulBase, volatile char pucBuffer[])
+{
+	//
+	// Loop while there are more characters to send.
+	//
+	while(UARTCharsAvail(ulBase))
+	{
+		// Read the next character from the UART
+		cChar = UARTCharGet(ulBase);
+		pucBuffer[respSize++] = cChar;
+		UARTCharPut(UART0_BASE, cChar);
+	}
+}
+
+void
+UART4IntHandler(void)
+{
+	unsigned long ulStatus3;
+	//tBoolean bRc;
+
+	// Get the interrupt status.
+	ulStatus3 = UARTIntStatus(GSM, true);
+
+	// Clear the asserted interrupts.
+	UARTIntClear(GSM, ulStatus3);
+
+	// Mientras haya data en el UART1
+	UARTReceive3(GSM, GSMresponse);
+
+}
 
 //*****************************************************************************
 //
@@ -1185,10 +1236,106 @@ SysTickHandler(void)
 	//
 	disk_timerproc();
 }
+//*************
+// GSM COMMAND
+//***************
+void
+gsmSim(){
+	char *endStream = "endstream";
+	memcpy((void *)(photo+(12017)), &endStream[0], strlen(endStream) );
+	while(!ce)
+	{
+
+		/*
+		 * Expected 0,1 if registered in network. Re-try until this is 0,1.
+		 */
+		checkConnection();
+
+		if((GSMresponse[respSize-11] == '0') && (GSMresponse[respSize-9] == '1'))
+		{
+			ce = 1;
+			//Response back with 0. Registered on network.
+			UARTCharPut(UART0_BASE, GSMresponse[respSize-11]);
+		}
+	}
+
+	//~1 Second Delay Can be more depending on network verification intervals.
+
+	if(ce)
+	{
+		SysCtlDelay(10000000);
+		contextActivation();//HAVE TO RESET CE SOMEWHERE!!
+	}
+
+
+	while(!sFlag && !rFlag)
+	{
+
+		while(!sFlag)
+		{
+			TCPConnect();
+
+			//Delay to assure socket connection.
+			SysCtlDelay(25000000);//3 second //Changed this delay from 6 to 3 seconds.
+			if(GSMresponse[respSize-5] == 'E' && GSMresponse[respSize-4] == 'C' && GSMresponse[respSize-3] == 'T')
+				sFlag = 1;
+			else if(GSMresponse[respSize-5] == 'R' && GSMresponse[respSize-4] == 'O' && GSMresponse[respSize-3] == 'R' && !sFlag)
+				respSize = 0;
+		}
+
+
+		//	while(!rFlag)
+		//	{
+		if(sFlag){
+
+			respSize = 0;
+
+
+			//________________________ANADIR A!QUI
+			//
+			//readToGSM("photo11.txt");
+			SendData((unsigned char *)photo);
+			//			IntDisable(INT_UART3);
+			//		SysCtlDelay(50000000);
+			//			IntEnable(INT_UART3);
+
+
+			do {
+				SysCtlDelay(20000000);
+			} while (GSMresponse[0] != '*' && GSMresponse[11] != 'R' );
+
+			SysCtlDelay(10000000);
+			if(GSMresponse[0] == '*')
+			{
+				//Testing Acknowledge
+				b=sec;
+				while(b--){}
+				UARTSend((unsigned long)UART0_BASE, (unsigned char *) "ACK Received", 12);
+				UARTCharPut(UART0_BASE, 13);
+				rFlag = 1;
+				respSize=0;
+				gsm = 0;
+
+				SysTickEnable();
+				SysTickIntEnable();
+
+				memset(&GSMresponse, 0, sizeof(GSMresponse));
+			}
+
+			if(GSMresponse[11] == 'R')
+			{
+				sFlag = 0;
+			}
+		}
+
+
+	}
+}
 int
 readToGSM(char * filename)
 {
 	FRESULT fresult;
+	memset(&photo, 0, sizeof(photo));
 	unsigned short usBytesRead;
 
 	//
@@ -1241,6 +1388,9 @@ readToGSM(char * filename)
 	// Enter a loop to repeatedly read data from the file and display it,
 	// until the end of the file is reached.
 	//
+
+	//UARTprintf("GOING to GSM\n");
+	marker4 = 0;
 	do
 	{
 		//
@@ -1249,17 +1399,28 @@ readToGSM(char * filename)
 		//
 		fresult = f_read(&g_sFileObject, g_cTmpBuf, sizeof(g_cTmpBuf) - 1,
 				&usBytesRead);
-
+		if(marker4==0)
+		{
+			memcpy(sizePHOTO, &g_cTmpBuf[0], 5);
+		}
 		//
 		// If there was an error reading, then print a newline and
 		// return the error to the user.
 		//
 		if(fresult != FR_OK)
 		{
-			UARTprintf("\n");
+			UARTprintf("NO SE\n");
 			return(fresult);
 		}
-
+		for (o=0; o<80; o++)
+		{
+			if(marker4<40)
+			{
+				photo[marker4]=g_cTmpBuf[o];
+				marker4++;
+				UARTprintf(g_cTmpBuf[o]);
+			}
+		}
 		//
 		// Null terminate the last block that was read to make it a
 		// null terminated string that can be used with printf.
@@ -1271,8 +1432,9 @@ readToGSM(char * filename)
 		//
 
 
-		//Send to GSM function
+
 		//sendData(g_cTmpBuf);
+
 		//UARTprintf("%s", g_cTmpBuf);
 
 		//
@@ -1282,6 +1444,11 @@ readToGSM(char * filename)
 	}
 	while(usBytesRead == sizeof(g_cTmpBuf) - 1);
 
+	//SysTickDisable();
+	//SysTickIntDisable();
+	//gsmSim();
+
+	//SendData((unsigned char*)photo);
 	//
 	// Return success.
 	//
@@ -1597,6 +1764,9 @@ Cmd_pwd(int argc, char *argv[])
 	//
 	return(0);
 }
+
+
+
 //*************
 // Sensor COMMAND
 //***************
@@ -1641,6 +1811,8 @@ void gpsSim()
 
 	// Encryption
 	encrypt();
+
+
 	UARTprintf("Done encrypting gps\n");
 	ltoa(sizeBuffer[0],(char *)sizeGPS);
 	writeSize=2;
@@ -1674,7 +1846,7 @@ void gpioEHandler(void)
 
 	GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 4);
 	SysCtlDelay(75000000);
-
+	SysCtlDelay(15000000);
 
 }
 /*int
@@ -1729,31 +1901,37 @@ Cmd_photoSim()
 {
 	for (w = 0 ; w<3; w++)
 	{
+		memset(&photo, 0, sizeof(photo));
 
 		ResetVariables();
 
 		// Camera
 		resetCamera();
+		SysCtlDelay(25000000);
 		takePhoto();
 		//readPhotoLength();
 		readPhoto();
-
+		if (w==2)
+		{
+			SysCtlDelay(50000000);
+		}
 		SysCtlDelay(50000000); // @ 50MHz each MCU cycle is 20ns
 		UARTprintf("Done with photo\n");
 		// Zero Padding photo
 		zeroPadding();
 
+
 		// Key
-		generateKey();
+		//generateKey();
 
 		// Putting key in the expanded key buffer
-		copyKeyToExpandedKey();
+		//copyKeyToExpandedKey();
 
 		// Fill round constant (Rcon) Table
-		fillRoundConTable();
+		//fillRoundConTable();
 
 		// Call to expanded key function
-		expandKey();
+		//expandKey();
 
 		// Encryption
 		encrypt();
@@ -1776,6 +1954,12 @@ Cmd_photoSim()
 			writeSize=5;
 			WriteFile("photo33.txt",(char *) sizePHOTO);
 		}
+		/*else if(w==3)
+		{
+			ltoa(sizeBuffer[w+1],(char *)sizePHOTO);
+			writeSize=5;
+			WriteFile("photo44.txt",(char *) sizePHOTO);
+		}*/
 
 		while (marker3<count)
 		{
@@ -1786,7 +1970,7 @@ Cmd_photoSim()
 
 			if(w==0)
 			{	writeSize=16;
-				WriteFile("photo11.txt",(char *) photo2);
+			WriteFile("photo11.txt",(char *) photo2);
 			}
 			else if(w==1)
 			{
@@ -1798,6 +1982,11 @@ Cmd_photoSim()
 				writeSize=16;
 				WriteFile("photo33.txt",(char *) photo2);
 			}
+			/*else if(w==3)
+			{
+				writeSize=16;
+				WriteFile("photo44.txt",(char *) photo2);
+			}*/
 		}
 		//WriteFile("photo2.txt", photo);
 		//	encryptBlock();
@@ -2120,83 +2309,7 @@ int Cmd_createDir(int argc, char *argv[])
 	return(0);
 }
 
-/*
-int Cmd_simulation(int argc, char *argv[])
-{
-	FRESULT fresult;
-	char g_cTmpBufOrigin[PATH_BUF_SIZE];
-	char g_cTmpBufFinal[PATH_BUF_SIZE];
-	if (sessionFlag==0)
-	{
-		sessionFlag=1;
-		newDirectoryFlag=1;
-		sessionItem=0;
-	}
 
-
-	long availability2=checkSize();
-
-
-	//Read "Origin Session file" to get origin session directory name
-	CmdLineProcess(readOrigin);
-	//Save Origin Session directory name
-
-	memcpy(g_cTmpBufOrigin, g_cTmpBuf, PATH_BUF_SIZE);
-	UARTprintf("%s", g_cTmpBufOrigin);
-	//Read "Final Session file" to get final session directory name
-	CmdLineProcess(readFinal);
-	//Save Final Session file directory
-	memcpy(g_cTmpBufFinal, g_cTmpBuf, PATH_BUF_SIZE);
-	UARTprintf("%s", g_cTmpBufFinal);
-	//size available must be more than 40KB
-	//if not then the oldest file (origin) must be deleted
-	while (availability2<=40)
-
-	{   //Delete Origin Session Directory to create space
-		Cmd_delete(g_cTmpBufOrigin);
-		//TODO in integration modify origin file (parse get the integer and add 1)
-		//memcpy(readOrigin[CMD_BUF_SIZE], readOrigin[CMD_BUF_SIZE]+1, PATH_BUF_SIZE); //
-		//delete origin txt and write a new origin.txt with the updated value (this example is session2)
-		Cmd_delete("origin.txt");
-		WriteFile("origin.txt","session2");
-		//Check again if more space is needed.
-		availability2=checkSize();
-
-	}
-	//I need to create now the new file or session if needed
-	if(newDirectoryFlag==1)
-	{
-		newDirectoryFlag==0;
-		//TODO modify final file (parse get the integer and add 1)
-		//memcpy(readFinal[CMD_BUF_SIZE], readFinal[CMD_BUF_SIZE]+1, PATH_BUF_SIZE); //
-		//This parameter will be changed with the new origin file
-		//EXample the session final before was 9 now is 10
-		Cmd_delete("finalS.txt");
-		WriteFile("finalS.txt","session10");
-		//Now the directory will be created using that new value
-		fresult=f_mkdir ("session10");
-	}
-	//Go to directory of the g_cTmpBufFinal
-	WriteFile("gps.txt","GPSCoordinate");
-	sessionItem++;
-
-
-	if (sessionItem==4)
-	{
-		sessionFlag=0;
-		//	ReadGPS&Photofiles // keep them for later transmission
-		//	Activate Transmission flag
-	}
-
-	//		if (transmissionFlag==1)
-	//	{Send files to GSM Module}
-
-
-	return(0);
-
-
-}
- */
 //*****************************************************************************
 //
 // This is the table that holds the command names, implementing functions,
@@ -2249,9 +2362,118 @@ __error__(char *pcFilename, unsigned long ulLine)
 // a command processing loop to read commands from the console.
 //
 //*****************************************************************************
+volatile unsigned char sendTest[testSize];
+
+
+/*int
+readToGSM(char * filename)
+{
+	FRESULT fresult;
+	unsigned short usBytesRead;
+
+	//
+	// First, check to make sure that the current path (CWD), plus
+	// the file name, plus a separator and trailing null, will all
+	// fit in the temporary buffer that will be used to hold the
+	// file name.  The file name must be fully specified, with path,
+	// to FatFs.
+	//
+	if(strlen(g_cCwdBuf) + strlen(filename) + 1 + 1 > sizeof(g_cTmpBuf))
+	{
+		UARTprintf("Resulting path name is too long\n");
+		return(0);
+	}
+
+	//
+	// Copy the current path to the temporary buffer so it can be manipulated.
+	//
+	strcpy(g_cTmpBuf, g_cCwdBuf);
+
+	//
+	// If not already at the root level, then append a separator.
+	//
+	if(strcmp("/", g_cCwdBuf))
+	{
+		strcat(g_cTmpBuf, "/");
+	}
+
+	//
+	// Now finally, append the file name to result in a fully specified file.
+	//
+	strcat(g_cTmpBuf, filename);
+
+
+	//
+	// Open the file for reading.
+	//
+	fresult = f_open(&g_sFileObject, g_cTmpBuf, FA_READ);
+
+	//
+	// If there was some problem opening the file, then return
+	// an error.
+	//
+	if(fresult != FR_OK)
+	{
+		return(fresult);
+	}
+
+	//
+	// Enter a loop to repeatedly read data from the file and display it,
+	// until the end of the file is reached.
+	//
+	do
+	{
+		//
+		// Read a block of data from the file.  Read as much as can fit
+		// in the temporary buffer, including a space for the trailing null.
+		//
+		fresult = f_read(&g_sFileObject, g_cTmpBuf, sizeof(g_cTmpBuf) - 1,
+				&usBytesRead);
+
+		//
+		// If there was an error reading, then print a newline and
+		// return the error to the user.
+		//
+		if(fresult != FR_OK)
+		{
+			UARTprintf("\n");
+			return(fresult);
+		}
+
+		//
+		// Null terminate the last block that was read to make it a
+		// null terminated string that can be used with printf.
+		//
+		//g_cTmpBuf[usBytesRead] = 0;
+
+		//
+		// Print the last chunk of the file that was received.
+		//
+
+
+		//Send to GSM function
+		//sendData(g_cTmpBuf);
+		//UARTprintf("%s", g_cTmpBuf);
+
+		//
+		// Continue reading until less than the full number of bytes are
+		// read.  That means the end of the buffer was reached.
+		//
+	}
+	while(usBytesRead == sizeof(g_cTmpBuf) - 1);
+
+	//
+	// Return success.
+	//
+	return(0);
+}
+ */
+
 int
 main(void)
-{  //-----Inizialization of GPS variables
+
+{
+	//-----Inizialization of GPS variables
 
 	proof1[0]='$';
 	proof1[1]='G';
@@ -2287,6 +2509,7 @@ main(void)
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
 	// Configuring UART ports for GPS
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART3);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_UART4);
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOC);
 
 	// Configure the GPIO pin muxing for the UART function.
@@ -2301,13 +2524,34 @@ main(void)
 	GPIOPinConfigure(0x00021801);//GPIO_PC6_U3RX
 	GPIOPinConfigure(0x00021C01);//GPIO_PC7_U3TX
 
+	//Configure the GPIO pin muxing for GSM
+	GPIOPinConfigure(0x00021001);//GPIO_PC4_U4RX
+	GPIOPinConfigure(0x00021401);//GPIO_PC5_U4TX
 
+	//
+	// Set GPIO A0 and A1 as UART.
+	//
+	GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
+	//UART used for camera
+	GPIOPinTypeUART(GPIO_PORTB_BASE, GPIO_PIN_0 | GPIO_PIN_1);
+	//UART used for gps
+	GPIOPinTypeUART(GPIO_PORTC_BASE, GPIO_PIN_6 | GPIO_PIN_7);
+	//UART used for GSM
+	GPIOPinTypeUART(GPIO_PORTC_BASE, GPIO_PIN_5 | GPIO_PIN_4);
+
+	//
+	// Initialize the UART as a console for text I/O.
+	//
+	UARTStdioInitExpClk(0,115200);
 	// Configure the UART for Camera for 38,400, 8-N-1 operation.
 	UARTConfigSetExpClk(UART1_BASE, SysCtlClockGet(), 38400,
 			(UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
 					UART_CONFIG_PAR_NONE));
 	// Configure the UART for GPS for 9,600, 8-N-1 operation.
 	UARTConfigSetExpClk(UART3_BASE, SysCtlClockGet(), 9600,
+			(UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
+					UART_CONFIG_PAR_NONE));
+	UARTConfigSetExpClk(GSM, SysCtlClockGet(), 115200,
 			(UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
 					UART_CONFIG_PAR_NONE));
 	//Specify type for gpio's
@@ -2318,48 +2562,39 @@ main(void)
 	SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_GPIOE|SYSCTL_PERIPH_GPIOF);
 	// Configure SysTick for a 100Hz interrupt.  The FatFs driver
 	// wants a 10 ms tick.
-	//
+
 	SysTickPeriodSet(SysCtlClockGet() / 100);
 	SysTickEnable();
 	SysTickIntEnable();
 
-	// Enable interrupt
+	//	// Enable interrupt
 	IntEnable(INT_UART1);
 	UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT);
-
-	// Declare interrupt for the GPIO in A7 detecting a HIGH from sensor
+	//
+	//	// Declare interrupt for the GPIO in A7 detecting a HIGH from sensor
 	GPIOPinIntClear(GPIO_PORTE_BASE,GPIO_PIN_3);
 	GPIOIntTypeSet(GPIO_PORTE_BASE, GPIO_PIN_3, GPIO_HIGH_LEVEL);
 	GPIOPinIntEnable(GPIO_PORTE_BASE, GPIO_PIN_3);
-	//
+	//	//
 	// Enable Interrupts
 	//
 	IntMasterEnable();
+	IntEnable(INT_UART4);
+	UARTIntEnable(GSM, UART_INT_RX | UART_INT_RT);
 
-	//
-	// Set GPIO A0 and A1 as UART.
-	//
-	GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
-	//UART used for camera
-	GPIOPinTypeUART(GPIO_PORTB_BASE, GPIO_PIN_0 | GPIO_PIN_1);
+	UARTCharPut(UART0_BASE, '!');
 
-	//UART used for gps
-	GPIOPinTypeUART(GPIO_PORTC_BASE, GPIO_PIN_6 | GPIO_PIN_7);
-	//
-	// Initialize the UART as a console for text I/O.
-	//
-	UARTStdioInitExpClk(0,9600);
 	//UARTStdioInit(0);
 
 	//
 	// Print hello message to user.
-	//
+
 	UARTprintf("\n\nCarSpy MicroSD Card Test\n");
 	UARTprintf("Type \'help\' for help.\n");
-
 	//
-	// Mount the file system, using logical disk 0.
-	//
+	//	//
+	//	// Mount the file system, using logical disk 0.
+	//	//
 	fresult = f_mount(0, &g_sFatFs);
 	if(fresult != FR_OK)
 	{
@@ -2373,37 +2608,69 @@ main(void)
 	//
 	IntEnable(INT_GPIOE);
 	//SysCtlSleep();
+	int s;
+	int c = 49;
+	for(s = 0; s < testSize; s++){
+		sendTest[s] = c;
+
+		if (s%240 == 0)
+			c++;
+	}
+
+	char *endStream = "endstream";
+	memcpy((void *)(photo+(12017)), &endStream[0], strlen(endStream) );
+
+	//		"AT#SCFG=1,1,1500,90,600,50\r\n"
+
+	//	j=sec;
+	//	while(j--){}
+	//	UARTSend((unsigned long)GSM, (unsigned char *) "AT#SCFG=1,1,1024,90,600,50\r\n",30);// 30);
+	//	gsm = 1;
+
 	while(1)
 	{
+
+
 		//
 		// Print a prompt to the console.  Show the CWD.
 		//
 		//UARTprintf("\n%s> ", g_cCwdBuf);
 		//delay of 6 seconds
 		//SysCtlDelay(75000000);
-		//IntEnable(INT_GPIOE);
 
 		if(sensorFlag==1)
 		{
-			CmdLineProcess("list");
+
 			sensorFlag=0;
-			/*Cmd_deleteG("photo11.txt");
+
+			SysCtlDelay(15000000);
+			CmdLineProcess("list");
+			Cmd_deleteG("photo11.txt");
 			Cmd_deleteG("photo22.txt");
 			Cmd_deleteG("photo33.txt");
 			Cmd_deleteG("gps22.txt");
-			*/UARTprintf("HOLA\n");
+
 			gpsSim();
 
 			//	UARTSend((unsigned long)UART0_BASE, photo, sizeof(photo));
 			SysCtlDelay(75000000);
 			GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
-			IntEnable(INT_GPIOE);
+			//UARTprintf("HOLA\n");
 			SysCtlDelay(15000000);
 			//CmdLineProcess("delete gps22.txt");
 			Cmd_photoSim();
+			//CmdLineProcess("list");
+			//gsmSim();
+			//readToGSM("photo33.txt");
+
+			SysCtlDelay(15000000);
+			SysTickEnable();
+			SysTickIntEnable();
+			//IntEnable(INT_GPIOE);
+			//SysCtlDelay(15000000);
+			SysCtlDelay(15000000);
 			CmdLineProcess("list");
 
-			//SysCtlDelay(15000000);
 			//CmdLineProcess("delete gps22.txt");
 			//run delete photo loop
 			//SysCtlDelay(15000000);
