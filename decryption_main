@@ -14,9 +14,9 @@ import java.util.Scanner;
 public class Decryption {
 
 	static String inputPhotoFile;
-	static File outputPhotoFile;
+	//static File outputPhotoFile;
 	static File decryptedPhotoFile;
-	//static String outputPhotoFile;  // for testing with GSM
+	static String outputPhotoFile;  // for testing with GSM
 
 	// Encrypted data block
 	public static String[][] ciphertext = null;
@@ -32,16 +32,16 @@ public class Decryption {
 
 		ciphertext = new String[4][4];
 		String hex = null;
-		inputPhotoFile="/Users/yoli/Desktop/gps22.txt";
+		inputPhotoFile="/Users/yoli/Desktop/photo33.txt";
 
 
 		///////////////// Convert Char File to HEX File
-		outputPhotoFile = CreateNewFile("/Users/yoli/Desktop/encrypted_photo.txt");
-		//outputPhotoFile = "/Users/yoli/Desktop/encrypted_photo.txt"; // for testing with GSM
+		//outputPhotoFile = CreateNewFile("/Users/yoli/Desktop/encrypted_photo.txt");
+		outputPhotoFile = "/Users/yoli/Desktop/encrypted_data.txt"; // for testing with GSM
 
-		hexDump(new java.io.PrintStream(outputPhotoFile), new File(inputPhotoFile));
+		//hexDump(new java.io.PrintStream(outputPhotoFile), new File(inputPhotoFile));
 
-		System.out.println("DONE Converting File");
+		//System.out.println("DONE Converting File");
 
 
 		////////////// Parsear HEX file y decriptar /////////////
@@ -52,6 +52,9 @@ public class Decryption {
 
 
 		Scanner parser = new Scanner(new FileReader(outputPhotoFile));
+		
+		for(int k = 0; k < 5; k++)
+			parser.next();
 
 		while(parser.hasNext()) {
 			// leer bloques de 4x4 del file
