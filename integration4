@@ -20,7 +20,7 @@
 #include "driverlib/uart.h"
 #include "time.h"
 
-#define GSM     UART4_BASE
+#define GSM   	UART4_BASE
 //*****************************************************************************
 //
 //! \addtogroup example_list
@@ -778,6 +778,9 @@ void getNextPhotoBlock(){
 //
 // Key Generation
 //
+
+
+
 //****************************************************************************
 void generateKey(){
 
@@ -1078,22 +1081,22 @@ void fillRoundConTable(){
 //
 //*****************************************************************************
 void copyKeyToExpandedKey(){
-	expandedKey[0][0] = 0x2B;
-	expandedKey[0][1] = 0x28;
-	expandedKey[0][2] = 0xAB;
-	expandedKey[0][3] = 0x09;
-	expandedKey[1][0] = 0x7E;
-	expandedKey[1][1] = 0xAE;
-	expandedKey[1][2] = 0xF7;
-	expandedKey[1][3] = 0xCF;
-	expandedKey[2][0] = 0x15;
-	expandedKey[2][1] = 0xD2;
-	expandedKey[2][2] = 0x15;
-	expandedKey[2][3] = 0x4F;
-	expandedKey[3][0] = 0x16;
-	expandedKey[3][1] = 0xA6;
-	expandedKey[3][2] = 0x88;
-	expandedKey[3][3] = 0x3C;
+	expandedKey[0][0] = cipherKey[0][0]; //0x2B;
+	expandedKey[0][1] = cipherKey[0][1]; //0x28;
+	expandedKey[0][2] = cipherKey[0][2]; //0xAB;
+	expandedKey[0][3] = cipherKey[0][3]; //0x09;
+	expandedKey[1][0] = cipherKey[1][0]; //0x7E;
+	expandedKey[1][1] = cipherKey[1][1]; //0xAE;
+	expandedKey[1][2] = cipherKey[1][2]; //0xF7;
+	expandedKey[1][3] = cipherKey[1][3]; //0xCF;
+	expandedKey[2][0] = cipherKey[2][0]; //0x15;
+	expandedKey[2][1] = cipherKey[2][1]; //0xD2;
+	expandedKey[2][2] = cipherKey[2][2]; //0x15;
+	expandedKey[2][3] = cipherKey[2][3]; //0x4F;
+	expandedKey[3][0] = cipherKey[3][0]; //0x16;
+	expandedKey[3][1] = cipherKey[3][1]; //0xA6;
+	expandedKey[3][2] = cipherKey[3][2]; //0x88;
+	expandedKey[3][3] = cipherKey[3][3]; //0x3C;
 }
 
 //WRITE COMMAND
