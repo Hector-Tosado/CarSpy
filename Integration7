@@ -1332,7 +1332,11 @@ gsmSim(){
 		if(sFlag){
 
 			respSize = 0;
-
+			saveInfo();
+			readToGSM("photo1.txt", 18);
+			SysTickDisable();
+			SysTickIntDisable();
+			SysCtlDelay(50000000);
 
 			//________________________ANADIR A!QUI
 			//
@@ -1353,8 +1357,8 @@ gsmSim(){
 			}
 			SysCtlDelay(10000000);
 
-			readToGSM("photo44.txt", 0);
-			readToGSMGPS("gps22.txt", 2);
+			readToGSM("photo3.txt", 0);
+			readToGSMGPS("gps.txt", 2);
 
 			SysTickDisable();
 			SysTickIntDisable();
@@ -2040,7 +2044,7 @@ void gpsSim()
 	UARTprintf("Done encrypting gps\n");
 	ltoa(sizeBuffer[0],(char *)sizeGPS);
 	writeSize=2;
-	WriteFile("gps22.txt",(char *)sizeGPS);
+	WriteFile("gps.txt",(char *)sizeGPS);
 	while (marker3<count)
 	{
 		for (o=0; o<16; o++)
@@ -2048,7 +2052,7 @@ void gpsSim()
 		marker3++;
 		}
 		writeSize=16;
-		WriteFile("gps22.txt",(char *) photo2);
+		WriteFile("gps.txt",(char *) photo2);
 	}
 
 }
@@ -2165,7 +2169,7 @@ Cmd_photoSim()
 		{
 			ltoa(sizeBuffer[w+1],(char *)sizePHOTO);
 			writeSize=5;
-			WriteFile("photo11.txt",(char *) sizePHOTO);
+			WriteFile("photo1.txt",(char *) sizePHOTO);
 		}
 		else if(w==1)
 		{
@@ -2176,13 +2180,13 @@ Cmd_photoSim()
 			writeSize=5;
 
 			marker6=5;
-			WriteFile("photo22.txt",(char *) sizePHOTO);
+			WriteFile("photo2.txt",(char *) sizePHOTO);
 		}
 		else if(w==2)
 		{
 			ltoa(sizeBuffer[w+1],(char *)sizePHOTO);
 			writeSize=5;
-			WriteFile("photo44.txt",(char *) sizePHOTO);
+			WriteFile("photo3.txt",(char *) sizePHOTO);
 		}
 		/*else if(w==3)
 		{
@@ -2206,17 +2210,17 @@ Cmd_photoSim()
 
 			if(w==0)
 			{	writeSize=16;
-			WriteFile("photo11.txt",(char *) photo2);
+			WriteFile("photo1.txt",(char *) photo2);
 			}
 			else if(w==1)
 			{
 				writeSize=16;
-				WriteFile("photo22.txt",(char *) photo2);
+				WriteFile("photo2.txt",(char *) photo2);
 			}
 			else if(w==2)
 			{
 				writeSize=16;
-				WriteFile("photo44.txt",(char *) photo2);
+				WriteFile("photo3.txt",(char *) photo2);
 			}
 			/*else if(w==3)
 			{
@@ -2882,30 +2886,22 @@ main(void)
 
 			SysCtlDelay(15000000);
 			CmdLineProcess("list");
-			Cmd_deleteG("photo11.txt");
-			Cmd_deleteG("photo22.txt");
-			Cmd_deleteG("photo44.txt");
-			Cmd_deleteG("gps22.txt");
-
+			Cmd_deleteG("photo1.txt");
+			Cmd_deleteG("photo2.txt");
+			Cmd_deleteG("photo3.txt");
+			Cmd_deleteG("gps.txt");
+			Cmd_deleteG("key.txt");
 			gpsSim();
 
 			//	UARTSend((unsigned long)UART0_BASE, photo, sizeof(photo));
 			SysCtlDelay(75000000);
-			GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
-			//UARTprintf("HOLA\n");
-			//SysCtlDelay(15000000);
-			//CmdLineProcess("delete gps22.txt");
-			Cmd_photoSim();
-			//SysCtlDelay(50000000);
-			//CmdLineProcess("list");
 
-			saveInfo();
+			Cmd_photoSim();
+			writeSize=16;
+			WriteFile("key.txt", (char *) cipherKey1D);
+
 			readToGSM("photo11.txt", 18);
 
-
-			SysTickDisable();
-			SysTickIntDisable();
-			SysCtlDelay(50000000);
 			gsmSim();
 
 
@@ -2914,6 +2910,7 @@ main(void)
 			////			readToGSM("photo22.txt",5);
 			////			SysCtlDelay(15000000);
 			SysCtlDelay(50000000);
+			GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
 			UARTprintf("Finished Simulation\n");
 			//			CmdLineProcess("list");
 			SysCtlReset();
